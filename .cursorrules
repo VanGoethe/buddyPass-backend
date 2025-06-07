@@ -1,0 +1,662 @@
+# BuddyPass Backend - Cursor Rules
+
+## Project Overview
+
+Node.js/TypeScript backend using Express.js, Prisma ORM, JWT authentication, and clean architecture patterns.
+
+## Architecture & Design Principles
+
+### 1. Clean Architecture Layer Separation
+
+- **Controllers**: Handle HTTP requests/responses only
+- **Services**: Contain business logic and orchestration
+- **Repositories**: Handle data persistence and database operations
+- **Types**: Define interfaces, DTOs, and contracts
+- **Models**: Define entity structures and domain objects
+
+### 2. Dependency Flow
+
+```
+Controller → Service → Repository → Database
+```
+
+- Never skip layers (e.g., Controller directly calling Repository)
+- Always use dependency injection through the container
+- Maintain single responsibility principle for each layer
+
+### 3. Directory Structure Rules
+
+```
+src/
+├── controllers/{domain}/     # HTTP request handlers
+├── services/{domain}/        # Business logic
+├── repositories/{domain}/    # Data access layer
+├── models/{domain}/          # Entity definitions
+├── types/{domain}/           # Interfaces & DTOs
+├── middleware/               # Express middleware
+├── routes/                   # Route definitions
+├── config/                   # Configuration files
+└── utils/                    # Utility functions
+```
+
+## API Documentation Standards
+
+### 1. Swagger/OpenAPI Documentation Requirements
+
+- **MANDATORY**: Every API endpoint must have complete Swagger documentation
+- **MANDATORY**: All request/response schemas must be defined in Swagger
+- **MANDATORY**: Include comprehensive examples for all endpoints
+- **MANDATORY**: Document all possible HTTP status codes and responses
+- **MANDATORY**: Include proper security scheme documentation for protected endpoints
+
+### 2. Swagger Documentation Structure
+
+```typescript
+/**
+ * @swagger
+ * /endpoint/path:
+ *   method:
+ *     summary: Brief endpoint description
+ *     description: Detailed endpoint description with usage notes
+ *     tags: [TagName]
+ *     security:
+ *       - BearerAuth: []  # For protected endpoints
+ *     parameters:
+ *       - in: path/query/header
+ *         name: parameterName
+ *         required: true/false
+ *         schema:
+ *           type: string/integer/boolean
+ *         description: Parameter description
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/SchemaName'
+ *           example:
+ *             field: "example value"
+ *     responses:
+ *       200:
+ *         description: Success response description
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ResponseSchema'
+ *             example:
+ *               success: true
+ *               data: {}
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ */
+```
+
+### 3. Schema Definition Requirements
+
+- **All DTOs must be documented in `src/config/swagger.ts`**
+- **Use proper OpenAPI 3.0 schema definitions**
+- **Include field descriptions, types, formats, and constraints**
+- **Define reusable response schemas for common patterns**
+- **Use proper references (`$ref`) to avoid duplication**
+
+### 4. Documentation Quality Standards
+
+- **Clear, concise summaries and descriptions**
+- **Comprehensive examples for all request/response bodies**
+- **Proper use of HTTP status codes**
+- **Include rate limiting information where applicable**
+- **Document authentication requirements clearly**
+- **Add migration notes for breaking changes**
+
+### 5. Swagger Configuration
+
+- **Swagger UI available at `/api-docs` endpoint**
+- **Custom styling for BuddyPass branding**
+- **Interactive "Try it out" functionality enabled**
+- **Proper server configuration for different environments**
+- **Security schemes properly configured (Bearer JWT, OAuth)**
+
+### 6. Documentation Maintenance Rules
+
+- **Update Swagger documentation with every endpoint change**
+- **Test documentation examples to ensure they work**
+- **Keep schema definitions in sync with actual DTOs**
+- **Review documentation during code review process**
+- **Version documentation alongside API versions**
+
+## TypeScript Standards
+
+### 1. Type Safety
+
+- Always use strict TypeScript (`strict: true`)
+- Never use `any` type - prefer `unknown` when needed
+- Define explicit return types for all functions
+- Use proper generic constraints when applicable
+
+### 2. Interface Definitions
+
+- Prefix interfaces with `I` (e.g., `IUserRepository`, `IUserService`)
+- Define DTOs for all API requests/responses
+- Separate domain types from HTTP types
+- Use readonly properties where immutability is desired
+
+### 3. Naming Conventions
+
+- **Files**: camelCase with descriptive names (`userController.ts`)
+- **Classes**: PascalCase (`UserService`, `PrismaUserRepository`)
+- **Interfaces**: PascalCase with `I` prefix (`IUserRepository`)
+- **Variables/Functions**: camelCase (`createUser`, `validateToken`)
+- **Constants**: SCREAMING_SNAKE_CASE (`JWT_SECRET`, `DEFAULT_PAGE_SIZE`)
+- **Types**: PascalCase (`UserResponse`, `CreateUserData`)
+
+## Code Organization
+
+### 1. Import Order
+
+```typescript
+// 1. Node modules
+import express from "express";
+import { Request, Response } from "express";
+
+// 2. Internal modules (absolute paths)
+import { IUserService } from "../types/users";
+import { authenticateJWT } from "../middleware/auth";
+
+// 3. Relative imports
+import "./config";
+```
+
+### 2. File Structure Template
+
+```typescript
+// Imports (following order above)
+
+// Types/Interfaces (if needed in this file)
+
+// Constants (if any)
+
+// Main class/function implementation
+
+// Default export (if applicable)
+```
+
+### 3. Error Handling
+
+- Always use custom error classes extending `Error`
+- Implement proper HTTP status codes
+- Use middleware for centralized error handling
+- Never expose internal errors to clients
+- Log errors with appropriate context
+
+## Database & Prisma Rules
+
+### 1. Repository Pattern
+
+- All database operations must go through repositories
+- Implement repository interfaces for testability
+- Use Prisma only within repository implementations
+- Handle database errors at repository level
+
+### 2. Database Queries
+
+- Use Prisma's type-safe query builder
+- Always handle potential null/undefined results
+- Use transactions for multi-table operations
+- Implement proper pagination with cursor-based pagination
+- Use `select` to limit returned fields when possible
+
+### 3. Schema Design
+
+- Follow consistent naming (camelCase for fields)
+- Use appropriate field types and constraints
+- Always include `createdAt` and `updatedAt` timestamps
+- Use UUIDs for primary keys where applicable
+
+## API Design Standards
+
+### 1. RESTful Conventions
+
+- Use proper HTTP methods (GET, POST, PUT, DELETE, PATCH)
+- Follow resource-based URL patterns (`/users/{id}`)
+- Use appropriate HTTP status codes
+- Implement consistent response formats
+
+### 2. Request Validation
+
+- Validate all incoming requests using express-validator
+- Define validation schemas in middleware
+- Return meaningful validation error messages
+- Sanitize input data before processing
+
+### 3. Response Structure
+
+```typescript
+// Success Response
+{
+  success: true,
+  data: T,
+  message?: string
+}
+
+// Error Response
+{
+  success: false,
+  error: {
+    code: string,
+    message: string,
+    details?: any
+  }
+}
+```
+
+### 4. Authentication & Authorization
+
+- Use JWT tokens for stateless authentication
+- Implement middleware for route protection
+- Follow principle of least privilege
+- Validate tokens on every protected route
+- Handle token expiration gracefully
+
+## Security Best Practices
+
+### 1. Input Validation
+
+- Validate and sanitize all user inputs
+- Use parameterized queries (Prisma handles this)
+- Implement rate limiting for API endpoints
+- Validate file uploads if applicable
+
+### 2. Authentication Security
+
+- Hash passwords using bcrypt with appropriate salt rounds
+- Use secure JWT signing algorithms (RS256 preferred)
+- Implement proper session management
+- Use HTTPS in production
+
+### 3. Environment Configuration
+
+- Never commit secrets to version control
+- Use environment variables for all configuration
+- Provide example `.env.example` file
+- Validate required environment variables on startup
+
+## Testing Standards
+
+### 1. Test Structure
+
+- Unit tests for services and utilities
+- Integration tests for repositories
+- End-to-end tests for API endpoints
+- Mock external dependencies
+
+### 2. Test Organization
+
+```
+tests/
+├── unit/
+├── integration/
+└── e2e/
+```
+
+### 3. Testing Best Practices
+
+- Test business logic thoroughly
+- Mock database for unit tests
+- Use test database for integration tests
+- Test error scenarios and edge cases
+- Maintain high test coverage (>80%)
+
+### 4. Test Data Management - MANDATORY RULES
+
+- **ALWAYS** clean up test data after test completion to prevent database saturation
+- **NEVER** leave test entities in the database after tests finish
+- **USE** the `TestDataCleanup` utility for all tests that create database entities
+- **TRACK** all created entities (users, countries, service providers, subscriptions) during tests
+
+### 5. Test Data Cleanup Implementation
+
+#### Using TestDataCleanup Utility
+
+```typescript
+import { TestDataCleanup, withTestCleanup } from "../utils/testCleanup";
+
+// Option 1: Using withTestCleanup wrapper (recommended)
+describe("My Test Suite", () => {
+  it(
+    "should create and cleanup test data",
+    withTestCleanup(async (cleanup) => {
+      // Create test entities
+      const user = await cleanup.getOrCreateTestUser("test@example.com");
+      const country = await cleanup.getOrCreateTestCountry(
+        "US",
+        "United States"
+      );
+
+      // Test logic here...
+
+      // Cleanup happens automatically
+    })
+  );
+});
+
+// Option 2: Manual cleanup management
+describe("My Test Suite", () => {
+  let cleanup: TestDataCleanup;
+
+  beforeEach(() => {
+    cleanup = new TestDataCleanup();
+  });
+
+  afterEach(async () => {
+    await cleanup.cleanupAll();
+    await cleanup.disconnect();
+  });
+
+  it("should create test data", async () => {
+    const user = await cleanup.getOrCreateTestUser("test@example.com");
+    cleanup.trackUser(user.id);
+
+    // Test logic here...
+  });
+});
+```
+
+#### Entity Tracking Rules
+
+- **Users**: Track with `cleanup.trackUser(userId)` after creation
+- **Countries**: Track with `cleanup.trackCountry(countryId)` after creation
+- **Service Providers**: Track with `cleanup.trackServiceProvider(providerId)` after creation
+- **Subscriptions**: Track with `cleanup.trackSubscription(subscriptionId)` after creation
+
+#### Cleanup Order (Automatic)
+
+The cleanup utility handles proper deletion order to respect foreign key constraints:
+
+1. Subscriptions (depend on service providers and countries)
+2. Service Provider Countries (junction table)
+3. Service Providers
+4. Countries
+5. Refresh Tokens (depend on users)
+6. Users
+
+### 6. Test Database Hygiene
+
+- **Integration Tests**: Must use test database, never production
+- **Entity Limits**: Avoid creating excessive test data (max 10 entities per test)
+- **Unique Identifiers**: Use timestamps or UUIDs to ensure unique test data
+- **Existing Data**: Prefer reusing existing test data when possible
+
+### 7. Test Data Creation Guidelines
+
+#### Creating Test Users
+
+```typescript
+// Use utility method (preferred)
+const user = await cleanup.getOrCreateTestUser("test@example.com");
+
+// Manual creation (track afterwards)
+const user = await userRepository.create({
+  email: `test-${Date.now()}@example.com`,
+  name: "Test User",
+  password: "hashedPassword",
+  role: "USER",
+});
+cleanup.trackUser(user.id);
+```
+
+#### Creating Test Countries
+
+```typescript
+// Use utility method (preferred)
+const country = await cleanup.getOrCreateTestCountry("US", "United States");
+
+// Manual creation (track afterwards)
+const country = await countryRepository.create({
+  name: "Test Country",
+  code: "TC",
+  alpha3: "TCS",
+});
+cleanup.trackCountry(country.id);
+```
+
+### 8. Test Failure Handling
+
+- **Failed Tests**: Cleanup must still occur even if tests fail
+- **Error Scenarios**: Test cleanup in error conditions
+- **Timeout Protection**: Set reasonable timeouts for cleanup operations
+- **Logging**: Log cleanup operations in verbose test mode
+
+### 9. Mock vs Real Data
+
+- **Unit Tests**: Use mocks, no real database operations
+- **Integration Tests**: Use real database with cleanup
+- **E2E Tests**: Use real database with comprehensive cleanup
+- **Performance Tests**: Use dedicated test data sets with bulk cleanup
+
+### 10. Test Data Validation
+
+- **Pre-test State**: Verify clean database state before tests
+- **Post-test State**: Verify all test data is removed after tests
+- **Isolation**: Ensure tests don't interfere with each other
+- **Deterministic**: Tests should produce same results regardless of execution order
+
+### 11. Cleanup Verification
+
+```typescript
+// Verify cleanup worked
+afterAll(async () => {
+  const remainingUsers = await prisma.user.count();
+  const remainingCountries = await prisma.country.count();
+
+  // Should only have seed data, not test data
+  expect(remainingUsers).toBeLessThanOrEqual(EXPECTED_SEED_USERS);
+  expect(remainingCountries).toBeLessThanOrEqual(EXPECTED_SEED_COUNTRIES);
+});
+```
+
+### 12. Test Data Best Practices
+
+- **Meaningful Names**: Use descriptive names for test entities
+- **Realistic Data**: Use realistic but obviously fake data
+- **Minimal Data**: Create only the minimum data needed for tests
+- **Shared Utilities**: Use shared test data creation utilities
+- **Documentation**: Document complex test data setups
+
+**REMEMBER**: Test data cleanup is not optional - it's mandatory for maintaining a healthy test environment and preventing database pollution.
+
+## Performance Guidelines
+
+### 1. Database Performance
+
+- Use database indexes appropriately
+- Implement query optimization
+- Use connection pooling
+- Monitor slow queries
+
+### 2. API Performance
+
+- Implement caching where appropriate
+- Use compression middleware
+- Optimize JSON payload sizes
+- Implement proper pagination
+
+### 3. Memory Management
+
+- Avoid memory leaks in long-running processes
+- Use streaming for large data processing
+- Implement proper cleanup in error scenarios
+
+## Documentation Standards
+
+### 1. Code Documentation
+
+- Use JSDoc for all public methods
+- Document complex business logic
+- Include usage examples for utilities
+- Document API endpoints with OpenAPI/Swagger
+
+### 2. README Requirements
+
+- Clear project setup instructions
+- Environment configuration guide
+- API documentation or links
+- Development workflow guidelines
+
+## Git & Development Workflow
+
+### 1. Commit Standards
+
+- Use conventional commits format
+- Write meaningful commit messages
+- Keep commits atomic and focused
+- Include relevant issue numbers
+
+### 2. Branch Naming
+
+- `feature/feature-name`
+- `bugfix/bug-description`
+- `hotfix/critical-fix`
+- `refactor/component-name`
+
+### 3. Code Review Guidelines
+
+- Review for architecture compliance
+- Check for security vulnerabilities
+- Verify test coverage
+- Ensure documentation updates
+
+## Environment-Specific Rules
+
+### 1. Development
+
+- Use detailed error messages
+- Enable debug logging
+- Use development database
+- Hot reload for faster development
+
+### 2. Production
+
+- Minimize error exposure
+- Implement proper logging levels
+- Use production database with pooling
+- Enable security headers and CORS properly
+
+## Monitoring & Logging
+
+### 1. Logging Standards
+
+- Use structured logging (JSON format)
+- Include correlation IDs for request tracing
+- Log at appropriate levels (error, warn, info, debug)
+- Never log sensitive information
+
+### 2. Monitoring
+
+- Track API response times
+- Monitor database query performance
+- Implement health check endpoints
+- Set up alerts for critical errors
+
+## Dependencies Management
+
+### 1. Package Management
+
+- Keep dependencies up to date
+- Use exact versions for production dependencies
+- Audit packages regularly for security vulnerabilities
+- Document any dependency-specific configurations
+
+### 2. Dependency Injection
+
+- Use the container pattern for dependency management
+- Ensure all dependencies are properly injected
+- Make services easily testable through DI
+- Avoid circular dependencies
+
+## Changelog Maintenance
+
+### 1. Mandatory Updates
+
+- **ALWAYS** update `CHANGELOG.md` with every significant change
+- **ALWAYS** run `date` command first to get the current date for changelog entries
+- Include changelog updates in the same PR/commit as the feature
+- Never merge code without updating the changelog appropriately
+
+### 2. When to Update Changelog
+
+- **Feature Addition**: New endpoints, functionality, or major components
+- **Breaking Changes**: API modifications, schema changes, or removed features
+- **Bug Fixes**: Significant bug resolutions that affect functionality
+- **Security Updates**: Any security-related changes or vulnerability fixes
+- **Architecture Changes**: Major refactoring, new patterns, or structural updates
+- **Dependency Updates**: Major version upgrades or important library changes
+- **Performance Improvements**: Notable optimizations or performance enhancements
+- **Documentation Updates**: Major documentation additions (including Swagger setup)
+
+### 3. Date Verification Process
+
+- **REQUIRED**: Run `date` command before updating changelog
+- Use the actual current date in YYYY-MM-DD format for new entries
+- Never estimate or guess dates - always verify the actual date
+- Example: `date` returns "Thu May 29 21:41:12 CAT 2025" → use "2025-05-29"
+
+### 4. Changelog Entry Format
+
+Follow semantic versioning and standard changelog format:
+
+```markdown
+## [Version] - YYYY-MM-DD
+
+### Added
+
+- New features, endpoints, or functionality
+
+### Changed
+
+- Changes to existing functionality
+
+### Deprecated
+
+- Features that will be removed in future versions
+
+### Removed
+
+- Removed features or endpoints
+
+### Fixed
+
+- Bug fixes and error corrections
+
+### Security
+
+- Security improvements and vulnerability fixes
+```
+
+### 5. Version Numbering Rules
+
+- **MAJOR (x.0.0)**: Breaking changes, API modifications
+- **MINOR (0.x.0)**: New features, backward-compatible additions
+- **PATCH (0.0.x)**: Bug fixes, security patches, minor improvements
+
+### 6. Changelog Review Process
+
+- **Step 1**: Run `date` command to get current date
+- **Step 2**: Update changelog with accurate date
+- Include changelog entry in PR description
+- Ensure entry accurately describes the change impact
+- Verify semantic version increment is appropriate
+- Review that all significant changes are documented
+- Update version in `package.json` when releasing
+
+### 7. Documentation Standards for Changelog
+
+- **Clear Descriptions**: Explain what changed and why it matters
+- **User Impact**: Focus on how changes affect API users/developers
+- **Migration Notes**: Include upgrade instructions for breaking changes
+- **Links and References**: Reference issue numbers, PRs, or related docs
+- **Consistent Language**: Use action verbs and clear, concise descriptions
+- **Accurate Dating**: Always use verified current date, never estimates
+
+Remember: Always act as senior backend developer, follow these rules, prioritize code readability, maintainability, and testability over premature optimization.
