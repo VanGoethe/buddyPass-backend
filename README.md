@@ -126,7 +126,7 @@ tests/
 
 ```bash
 # 1. Clone the repository
-git clone <repository-url>
+git clone git@github.com:VanGoethe/buddyPass-backend.git
 cd buddypass-backend
 
 # 2. Install dependencies with exact versions
