@@ -127,7 +127,7 @@ tests/
 ```bash
 # 1. Clone the repository
 git clone git@github.com:VanGoethe/buddyPass-backend.git
-cd buddypass-backend
+cd buddyPass-backend
 
 # 2. Install dependencies with exact versions
 npm ci
