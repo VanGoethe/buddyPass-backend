@@ -572,21 +572,23 @@ describe("Authentication Middleware", () => {
       expect(mockNext).not.toHaveBeenCalled();
     });
 
-    it("should reset attempts after window expires", (done) => {
+    it("should reset attempts after window expires", () => {
+      jest.useFakeTimers();
       const rateLimitMiddleware = authRateLimit(1, 100); // 100ms window
 
       // First request should pass
       rateLimitMiddleware(mockReq as Request, mockRes as Response, mockNext);
       expect(mockNext).toHaveBeenCalled();
 
-      // Wait for window to expire and test again
-      setTimeout(() => {
-        jest.clearAllMocks();
-        rateLimitMiddleware(mockReq as Request, mockRes as Response, mockNext);
-        expect(mockNext).toHaveBeenCalled();
-        expect(mockRes.status).not.toHaveBeenCalled();
-        done();
-      }, 150);
+      // Advance timers to simulate window expiration
+      jest.advanceTimersByTime(150);
+      jest.clearAllMocks();
+
+      rateLimitMiddleware(mockReq as Request, mockRes as Response, mockNext);
+      expect(mockNext).toHaveBeenCalled();
+      expect(mockRes.status).not.toHaveBeenCalled();
+
+      jest.useRealTimers();
     });
   });
 });
