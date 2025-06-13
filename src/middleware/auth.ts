@@ -128,7 +128,7 @@ export const authenticateJWT = async (
       provider: user.provider,
       role: user.role,
       isVerified: user.isVerified || false,
-      isActive: user.isActive || true,
+      isActive: user.isActive,
     };
 
     next();
@@ -178,7 +178,7 @@ export const optionalAuth = async (
           provider: user.provider,
           role: user.role,
           isVerified: user.isVerified || false,
-          isActive: user.isActive || true,
+          isActive: user.isActive,
         };
       }
     }

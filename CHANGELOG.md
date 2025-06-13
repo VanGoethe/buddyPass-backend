@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.3] - 2025-06-13
+
+### Fixed - Authentication Middleware
+
+- **User Activity Handling**: `authenticateJWT` and `optionalAuth` now preserve the `isActive` flag without forcing it to `true`, ensuring deactivated accounts are properly recognized.
+
+
 ## [1.7.2] - 2025-06-04
 
 ### Fixed - Swagger Documentation Country Relationships
