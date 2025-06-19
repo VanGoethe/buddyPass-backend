@@ -485,14 +485,11 @@ describe("Authentication Integration Tests", () => {
     });
 
     it("should handle logout without token gracefully", async () => {
-      const response = await request(app).post("/api/users/logout").expect(401);
+      const response = await request(app).post("/api/users/logout").expect(200);
 
       expect(response.body).toMatchObject({
-        success: false,
-        error: {
-          code: "MISSING_TOKEN",
-          message: "Access token is required",
-        },
+        success: true,
+        message: "Logout successful",
       });
     });
   });

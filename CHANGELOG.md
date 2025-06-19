@@ -7,14 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Comprehensive Validation Tests**: Added extensive unit tests for all validation functions
+  - Complete test coverage for `registerValidation`, `loginValidation`, `refreshTokenValidation`, `updateProfileValidation`, and `changePasswordValidation`
+  - Boundary testing for name length limits and avatar URL validation
+  - Edge case testing for malformed URLs, whitespace handling, and password complexity requirements
+  - 32 new validation test cases ensuring robust request validation across all endpoints
+
 ### Fixed
 
+- **Logout Authentication**: Fixed logout endpoint to use optional authentication instead of required authentication
+  - Changed logout route from `authenticateJWT` to `optionalAuth` middleware
+  - Logout now works with valid tokens, expired tokens, or no tokens at all
+  - Updated Swagger documentation to reflect optional authentication for logout
+  - Improved user experience by allowing logout even when tokens are expired
 - **Test Suite Alignment**: Fixed failing tests to match correct implementation
   - Fixed ServiceProvider tests to use correct pagination structure with nested `pagination` object
   - Updated E2E tests to match actual validation messages (name max 100 chars, description max 500 chars)
   - Fixed error code expectations to match actual implementation (`CONFLICT` instead of `DUPLICATE_ENTRY`)
   - Fixed auth integration tests to match actual user response structure (removed non-existent `isActive` and `isVerified` fields)
   - Fixed logout message expectation to match actual implementation ("Logout successful")
+
+### Changed
+
+- **API Documentation**: Updated logout endpoint documentation to indicate authentication is optional
+  - Added multiple security schemes in Swagger (`BearerAuth` and empty for no auth)
+  - Removed 401 Unauthorized response from logout endpoint documentation
+  - Enhanced description to clarify that logout works with both valid and expired tokens
 
 ## [1.7.3] - 2025-06-19
 

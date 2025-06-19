@@ -10,6 +10,7 @@ import {
   authenticateJWT,
   authRateLimit,
   validateRequest,
+  optionalAuth,
 } from "../middleware/auth";
 import {
   registerValidation,
@@ -183,10 +184,11 @@ router.post(
  * /users/logout:
  *   post:
  *     summary: Logout user (client-side token disposal)
- *     description: Instructs client to dispose of JWT token. No server-side action required for stateless JWT.
+ *     description: Instructs client to dispose of JWT token. No server-side action required for stateless JWT. Authentication is optional - works with both valid and expired tokens.
  *     tags: [Authentication]
  *     security:
  *       - BearerAuth: []
+ *       - {}
  *     responses:
  *       200:
  *         description: Logout successful
@@ -196,13 +198,11 @@ router.post(
  *               $ref: '#/components/schemas/SuccessResponse'
  *             example:
  *               success: true
- *               message: "Logged out successfully"
- *       401:
- *         $ref: '#/components/responses/UnauthorizedError'
+ *               message: "Logout successful"
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.post("/logout", authenticateJWT, (req: Request, res: Response) => {
+router.post("/logout", optionalAuth, (req: Request, res: Response) => {
   userController.logout(req, res);
 });
 
