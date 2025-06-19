@@ -205,6 +205,8 @@ router.post(
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
+// The logout route uses optionalAuth to allow both authenticated and unauthenticated users to access it.
+// This is because the client-side token disposal does not require server-side validation of the token.
 router.post("/logout", optionalAuth, (req: Request, res: Response) => {
   userController.logout(req, res);
 });
