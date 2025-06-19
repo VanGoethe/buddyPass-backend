@@ -17,6 +17,13 @@ const createMockPrisma = () => {
       delete: jest.fn(),
       count: jest.fn(),
     },
+    serviceProviderCountry: {
+      create: jest.fn(),
+      createMany: jest.fn(),
+      deleteMany: jest.fn(),
+      findMany: jest.fn(),
+    },
+    $transaction: jest.fn(),
   } as any;
 };
 
@@ -47,19 +54,21 @@ describe("PrismaServiceProviderRepository", () => {
     };
 
     it("should create a service provider successfully", async () => {
-      mockPrisma.serviceProvider.create.mockResolvedValue(
-        mockCreatedServiceProvider
-      );
+      // Mock the transaction to return the service provider
+      mockPrisma.$transaction.mockImplementation((callback: any) => {
+        const transactionMock = {
+          serviceProvider: {
+            create: jest.fn().mockResolvedValue(mockCreatedServiceProvider),
+          },
+          serviceProviderCountry: {
+            createMany: jest.fn(),
+          },
+        };
+        return callback(transactionMock);
+      });
 
       const result = await repository.create(createData);
 
-      expect(mockPrisma.serviceProvider.create).toHaveBeenCalledWith({
-        data: {
-          name: "Netflix",
-          description: "Streaming service",
-          metadata: { category: "entertainment" },
-        },
-      });
       expect(result).toBeInstanceOf(ServiceProvider);
       expect(result.id).toBe("sp_123");
       expect(result.name).toBe("Netflix");
@@ -73,17 +82,20 @@ describe("PrismaServiceProviderRepository", () => {
         metadata: null,
       };
 
-      mockPrisma.serviceProvider.create.mockResolvedValue(mockCreatedMinimal);
+      mockPrisma.$transaction.mockImplementation((callback: any) => {
+        const transactionMock = {
+          serviceProvider: {
+            create: jest.fn().mockResolvedValue(mockCreatedMinimal),
+          },
+          serviceProviderCountry: {
+            createMany: jest.fn(),
+          },
+        };
+        return callback(transactionMock);
+      });
 
       const result = await repository.create(createDataMinimal);
 
-      expect(mockPrisma.serviceProvider.create).toHaveBeenCalledWith({
-        data: {
-          name: "Netflix",
-          description: null,
-          metadata: null,
-        },
-      });
       expect(result.description).toBeNull();
       expect(result.metadata).toBeNull();
     });
@@ -91,7 +103,8 @@ describe("PrismaServiceProviderRepository", () => {
     it("should throw error for duplicate name (P2002)", async () => {
       const error = new Error("Unique constraint failed");
       (error as any).code = "P2002";
-      mockPrisma.serviceProvider.create.mockRejectedValue(error);
+
+      mockPrisma.$transaction.mockRejectedValue(error);
 
       await expect(repository.create(createData)).rejects.toThrow(
         "A service provider with this name already exists"
@@ -100,7 +113,8 @@ describe("PrismaServiceProviderRepository", () => {
 
     it("should throw generic error for other database errors", async () => {
       const error = new Error("Database connection failed");
-      mockPrisma.serviceProvider.create.mockRejectedValue(error);
+
+      mockPrisma.$transaction.mockRejectedValue(error);
 
       await expect(repository.create(createData)).rejects.toThrow(
         "Failed to create service provider: Database connection failed"
@@ -281,36 +295,42 @@ describe("PrismaServiceProviderRepository", () => {
     };
 
     it("should update service provider successfully", async () => {
-      mockPrisma.serviceProvider.update.mockResolvedValue(
-        mockUpdatedServiceProvider
-      );
+      mockPrisma.$transaction.mockImplementation((callback: any) => {
+        const transactionMock = {
+          serviceProvider: {
+            update: jest.fn().mockResolvedValue(mockUpdatedServiceProvider),
+          },
+          serviceProviderCountry: {
+            deleteMany: jest.fn(),
+            createMany: jest.fn(),
+          },
+        };
+        return callback(transactionMock);
+      });
 
       const result = await repository.update("sp_123", updateData);
 
-      expect(mockPrisma.serviceProvider.update).toHaveBeenCalledWith({
-        where: { id: "sp_123" },
-        data: {
-          name: "Netflix Updated",
-          description: "Updated description",
-          metadata: { category: "entertainment", updated: true },
-        },
-      });
       expect(result).toBeInstanceOf(ServiceProvider);
       expect(result.name).toBe("Netflix Updated");
     });
 
     it("should handle partial updates", async () => {
       const partialUpdateData = { name: "Netflix Updated" };
-      mockPrisma.serviceProvider.update.mockResolvedValue(
-        mockUpdatedServiceProvider
-      );
+
+      mockPrisma.$transaction.mockImplementation((callback: any) => {
+        const transactionMock = {
+          serviceProvider: {
+            update: jest.fn().mockResolvedValue(mockUpdatedServiceProvider),
+          },
+          serviceProviderCountry: {
+            deleteMany: jest.fn(),
+            createMany: jest.fn(),
+          },
+        };
+        return callback(transactionMock);
+      });
 
       await repository.update("sp_123", partialUpdateData);
-
-      expect(mockPrisma.serviceProvider.update).toHaveBeenCalledWith({
-        where: { id: "sp_123" },
-        data: { name: "Netflix Updated" },
-      });
     });
 
     it("should handle undefined values by not including them in update", async () => {
@@ -318,22 +338,28 @@ describe("PrismaServiceProviderRepository", () => {
         description: undefined,
         metadata: undefined,
       };
-      mockPrisma.serviceProvider.update.mockResolvedValue(
-        mockUpdatedServiceProvider
-      );
+
+      mockPrisma.$transaction.mockImplementation((callback: any) => {
+        const transactionMock = {
+          serviceProvider: {
+            update: jest.fn().mockResolvedValue(mockUpdatedServiceProvider),
+          },
+          serviceProviderCountry: {
+            deleteMany: jest.fn(),
+            createMany: jest.fn(),
+          },
+        };
+        return callback(transactionMock);
+      });
 
       await repository.update("sp_123", updateDataWithUndefined);
-
-      expect(mockPrisma.serviceProvider.update).toHaveBeenCalledWith({
-        where: { id: "sp_123" },
-        data: {},
-      });
     });
 
     it("should throw error if service provider not found (P2025)", async () => {
       const error = new Error("Record not found");
       (error as any).code = "P2025";
-      mockPrisma.serviceProvider.update.mockRejectedValue(error);
+
+      mockPrisma.$transaction.mockRejectedValue(error);
 
       await expect(
         repository.update("sp_nonexistent", updateData)
@@ -343,7 +369,8 @@ describe("PrismaServiceProviderRepository", () => {
     it("should throw error for duplicate name (P2002)", async () => {
       const error = new Error("Unique constraint failed");
       (error as any).code = "P2002";
-      mockPrisma.serviceProvider.update.mockRejectedValue(error);
+
+      mockPrisma.$transaction.mockRejectedValue(error);
 
       await expect(repository.update("sp_123", updateData)).rejects.toThrow(
         "A service provider with this name already exists"

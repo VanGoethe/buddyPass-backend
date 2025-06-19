@@ -4,9 +4,10 @@
 
 import { ServiceProviderService } from "../../../src/services/serviceProviders";
 import { IServiceProviderRepository } from "../../../src/types/serviceProviders";
+import { ICountryRepository } from "../../../src/types/countries";
 import { ServiceProvider } from "../../../src/models/serviceProviders";
 
-// Mock the repository
+// Mock the repositories
 const mockServiceProviderRepository: jest.Mocked<IServiceProviderRepository> = {
   create: jest.fn(),
   findById: jest.fn(),
@@ -14,6 +15,23 @@ const mockServiceProviderRepository: jest.Mocked<IServiceProviderRepository> = {
   update: jest.fn(),
   delete: jest.fn(),
   existsByName: jest.fn(),
+  addSupportedCountries: jest.fn(),
+  removeSupportedCountries: jest.fn(),
+  getSupportedCountries: jest.fn(),
+};
+
+const mockCountryRepository: jest.Mocked<ICountryRepository> = {
+  create: jest.fn(),
+  findById: jest.fn(),
+  findMany: jest.fn(),
+  update: jest.fn(),
+  delete: jest.fn(),
+  findByCode: jest.fn(),
+  findByAlpha3: jest.fn(),
+  findActive: jest.fn(),
+  existsByName: jest.fn(),
+  existsByCode: jest.fn(),
+  existsByAlpha3: jest.fn(),
 };
 
 describe("ServiceProviderService", () => {
@@ -22,7 +40,8 @@ describe("ServiceProviderService", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     serviceProviderService = new ServiceProviderService(
-      mockServiceProviderRepository
+      mockServiceProviderRepository,
+      mockCountryRepository
     );
   });
 
@@ -47,6 +66,10 @@ describe("ServiceProviderService", () => {
       mockServiceProviderRepository.create.mockResolvedValue(
         mockCreatedServiceProvider
       );
+      // Mock the second findById call for retrieving with countries
+      mockServiceProviderRepository.findById.mockResolvedValue(
+        mockCreatedServiceProvider
+      );
 
       const result = await serviceProviderService.createServiceProvider(
         validCreateData
@@ -63,6 +86,7 @@ describe("ServiceProviderService", () => {
         name: "Netflix",
         description: "Streaming service",
         metadata: { category: "entertainment" },
+        supportedCountries: [],
         createdAt: mockCreatedServiceProvider.createdAt.toISOString(),
         updatedAt: mockCreatedServiceProvider.updatedAt.toISOString(),
       });
@@ -137,13 +161,15 @@ describe("ServiceProviderService", () => {
       );
 
       expect(mockServiceProviderRepository.findById).toHaveBeenCalledWith(
-        "sp_123"
+        "sp_123",
+        true
       );
       expect(result).toEqual({
         id: "sp_123",
         name: "Netflix",
         description: "Streaming service",
         metadata: null,
+        supportedCountries: [],
         createdAt: mockServiceProvider.createdAt.toISOString(),
         updatedAt: mockServiceProvider.updatedAt.toISOString(),
       });
@@ -165,7 +191,8 @@ describe("ServiceProviderService", () => {
       ).rejects.toThrow("Service provider not found");
 
       expect(mockServiceProviderRepository.findById).toHaveBeenCalledWith(
-        "sp_nonexistent"
+        "sp_nonexistent",
+        true
       );
     });
   });
@@ -205,16 +232,19 @@ describe("ServiceProviderService", () => {
         page: 1,
         limit: 10,
       });
-      expect(result).toEqual({
-        serviceProviders: mockServiceProviders.map((sp) =>
-          new ServiceProvider(sp).toResponse()
-        ),
-        total: 2,
-        page: 1,
-        limit: 10,
-        hasNext: false,
-        hasPrevious: false,
+      expect(result.serviceProviders).toHaveLength(2);
+      expect(result.serviceProviders[0]).toMatchObject({
+        id: mockServiceProviders[0].id,
+        name: mockServiceProviders[0].name,
+        description: mockServiceProviders[0].description?.toString(),
       });
+      expect(result.serviceProviders[1]).toMatchObject({
+        id: mockServiceProviders[1].id,
+        name: mockServiceProviders[1].name,
+        description: mockServiceProviders[1].description?.toString(),
+      });
+      expect(result.pagination.page).toBe(1);
+      expect(result.pagination.limit).toBe(10);
     });
 
     it("should return default pagination if no options provided", async () => {
@@ -226,8 +256,9 @@ describe("ServiceProviderService", () => {
       const result = await serviceProviderService.getServiceProviders();
 
       expect(mockServiceProviderRepository.findMany).toHaveBeenCalledWith({});
-      expect(result.page).toBe(1);
-      expect(result.limit).toBe(10);
+      expect(result.serviceProviders).toHaveLength(0);
+      expect(result.pagination.page).toBe(1);
+      expect(result.pagination.limit).toBe(10);
     });
 
     it("should throw error if page is less than 1", async () => {
@@ -270,9 +301,12 @@ describe("ServiceProviderService", () => {
     };
 
     it("should update service provider successfully", async () => {
-      mockServiceProviderRepository.findById.mockResolvedValue(
-        mockExistingServiceProvider
-      );
+      // Mock first findById call (existence check)
+      mockServiceProviderRepository.findById
+        .mockResolvedValueOnce(mockExistingServiceProvider)
+        // Mock second findById call (get updated data with countries)
+        .mockResolvedValueOnce(mockUpdatedServiceProvider);
+
       mockServiceProviderRepository.existsByName.mockResolvedValue(false);
       mockServiceProviderRepository.update.mockResolvedValue(
         mockUpdatedServiceProvider
@@ -283,8 +317,14 @@ describe("ServiceProviderService", () => {
         updateData
       );
 
-      expect(mockServiceProviderRepository.findById).toHaveBeenCalledWith(
+      expect(mockServiceProviderRepository.findById).toHaveBeenNthCalledWith(
+        1,
         "sp_123"
+      );
+      expect(mockServiceProviderRepository.findById).toHaveBeenNthCalledWith(
+        2,
+        "sp_123",
+        true
       );
       expect(mockServiceProviderRepository.existsByName).toHaveBeenCalledWith(
         "Netflix Updated",

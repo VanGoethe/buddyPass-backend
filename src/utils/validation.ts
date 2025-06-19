@@ -36,6 +36,16 @@ export const refreshTokenValidation = [
   body("refreshToken").notEmpty().withMessage("Refresh token is required"),
 ];
 
+export const updateProfileValidation = [
+  body("name")
+    .optional()
+    .trim()
+    .isLength({ min: 1, max: 50 })
+    .withMessage("Name must be between 1 and 50 characters when provided"),
+
+  body("avatar").optional().isURL().withMessage("Avatar must be a valid URL"),
+];
+
 export const changePasswordValidation = [
   body("currentPassword")
     .notEmpty()

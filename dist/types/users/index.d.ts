@@ -127,6 +127,8 @@ export interface UpdateUserData {
     name?: string | null;
     avatar?: string | null;
     password?: string;
+    role?: UserRole;
+    isActive?: boolean;
 }
 export interface IUserRepository {
     findById(id: string): Promise<User | null>;

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.changePasswordValidation = exports.refreshTokenValidation = exports.loginValidation = exports.registerValidation = void 0;
+exports.changePasswordValidation = exports.updateProfileValidation = exports.refreshTokenValidation = exports.loginValidation = exports.registerValidation = void 0;
 const express_validator_1 = require("express-validator");
 exports.registerValidation = [
     (0, express_validator_1.body)("email")
@@ -27,6 +27,14 @@ exports.loginValidation = [
 ];
 exports.refreshTokenValidation = [
     (0, express_validator_1.body)("refreshToken").notEmpty().withMessage("Refresh token is required"),
+];
+exports.updateProfileValidation = [
+    (0, express_validator_1.body)("name")
+        .optional()
+        .trim()
+        .isLength({ min: 1, max: 50 })
+        .withMessage("Name must be between 1 and 50 characters when provided"),
+    (0, express_validator_1.body)("avatar").optional().isURL().withMessage("Avatar must be a valid URL"),
 ];
 exports.changePasswordValidation = [
     (0, express_validator_1.body)("currentPassword")

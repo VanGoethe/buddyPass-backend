@@ -13,8 +13,8 @@ const subscriptionController = container_1.container.getSubscriptionController()
  * @swagger
  * /subscriptions:
  *   get:
- *     summary: Get list of subscriptions
- *     description: Retrieve subscriptions with pagination, search, and filtering. Users can only see their own subscriptions.
+ *     summary: Get all subscriptions
+ *     description: Retrieve a paginated list of subscriptions with optional filtering. Users can only see their own subscriptions.
  *     tags: [Subscriptions]
  *     security:
  *       - BearerAuth: []
@@ -26,30 +26,58 @@ const subscriptionController = container_1.container.getSubscriptionController()
  *           minimum: 1
  *           default: 1
  *         description: Page number for pagination
+ *         example: 1
  *       - in: query
  *         name: limit
  *         schema:
  *           type: integer
  *           minimum: 1
- *           maximum: 50
+ *           maximum: 100
  *           default: 10
- *         description: Number of subscriptions per page
+ *         description: Number of items per page (max 100)
+ *         example: 10
  *       - in: query
  *         name: search
  *         schema:
  *           type: string
- *         description: Search subscriptions by name or email
+ *         description: Search term for subscription name or email
+ *         example: "Netflix"
+ *       - in: query
+ *         name: sortBy
+ *         schema:
+ *           type: string
+ *           enum: [name, createdAt, userPrice]
+ *           default: createdAt
+ *         description: Field to sort by
+ *         example: "name"
+ *       - in: query
+ *         name: sortOrder
+ *         schema:
+ *           type: string
+ *           enum: [asc, desc]
+ *           default: desc
+ *         description: Sort order
+ *         example: "asc"
  *       - in: query
  *         name: serviceProviderId
  *         schema:
  *           type: string
  *           format: cuid
  *         description: Filter by service provider ID
+ *         example: "cm4sp789xyz012ghi"
+ *       - in: query
+ *         name: countryId
+ *         schema:
+ *           type: string
+ *           format: cuid
+ *         description: Filter by country ID
+ *         example: "cm4c123abc456def789"
  *       - in: query
  *         name: isActive
  *         schema:
  *           type: boolean
  *         description: Filter by active status
+ *         example: true
  *     responses:
  *       200:
  *         description: Subscriptions retrieved successfully
@@ -87,7 +115,12 @@ const subscriptionController = container_1.container.getSubscriptionController()
  *                     name: "Netflix Premium Family"
  *                     email: "netflix@example.com"
  *                     availableSlots: 3
- *                     country: "US"
+ *                     countryId: "cm4c123abc456def789"
+ *                     country:
+ *                       id: "cm4c123abc456def789"
+ *                       name: "United States"
+ *                       code: "US"
+ *                       alpha3: "USA"
  *                     userPrice: 4.99
  *                     currency: "USD"
  *                     isActive: true
@@ -150,7 +183,12 @@ router.get("/", auth_1.authenticateJWT, subscriptions_1.SubscriptionController.g
  *                   name: "Netflix Premium Family"
  *                   email: "netflix@example.com"
  *                   availableSlots: 3
- *                   country: "US"
+ *                   countryId: "cm4c123abc456def789"
+ *                   country:
+ *                     id: "cm4c123abc456def789"
+ *                     name: "United States"
+ *                     code: "US"
+ *                     alpha3: "USA"
  *                   expiresAt: "2025-12-31T23:59:59.000Z"
  *                   userPrice: 4.99
  *                   currency: "USD"
@@ -192,7 +230,7 @@ router.get("/:id", auth_1.authenticateJWT, subscriptions_1.SubscriptionControlle
  *             email: "netflix@example.com"
  *             password: "MyNetflixPass123"
  *             availableSlots: 4
- *             country: "US"
+ *             countryId: "cm4c123abc456def789"
  *             expiresAt: "2025-12-31T23:59:59.000Z"
  *             userPrice: 4.99
  *             currency: "USD"
@@ -220,7 +258,12 @@ router.get("/:id", auth_1.authenticateJWT, subscriptions_1.SubscriptionControlle
  *                   name: "Netflix Premium Family"
  *                   email: "netflix@example.com"
  *                   availableSlots: 4
- *                   country: "US"
+ *                   countryId: "cm4c123abc456def789"
+ *                   country:
+ *                     id: "cm4c123abc456def789"
+ *                     name: "United States"
+ *                     code: "US"
+ *                     alpha3: "USA"
  *                   expiresAt: "2025-12-31T23:59:59.000Z"
  *                   userPrice: 4.99
  *                   currency: "USD"
@@ -259,39 +302,11 @@ router.post("/", auth_1.authenticateJWT, subscriptions_1.SubscriptionController.
  *       content:
  *         application/json:
  *           schema:
- *             type: object
- *             properties:
- *               name:
- *                 type: string
- *                 minLength: 1
- *                 description: Subscription name
- *               availableSlots:
- *                 type: integer
- *                 minimum: 1
- *                 maximum: 10
- *                 description: Number of available slots
- *               country:
- *                 type: string
- *                 description: Country restriction
- *               expiresAt:
- *                 type: string
- *                 format: date-time
- *                 description: Subscription expiration date
- *               userPrice:
- *                 type: number
- *                 format: decimal
- *                 minimum: 0
- *                 description: Price per user slot
- *               currency:
- *                 type: string
- *                 enum: ["USD", "EUR", "GBP", "CAD", "AUD"]
- *                 description: Currency code
- *               isActive:
- *                 type: boolean
- *                 description: Whether subscription is active
+ *             $ref: '#/components/schemas/UpdateSubscriptionRequest'
  *           example:
  *             name: "Netflix Premium Family - Updated"
  *             availableSlots: 3
+ *             countryId: "cm4c456def789abc123"
  *             userPrice: 5.99
  *             isActive: true
  *     responses:
@@ -318,6 +333,12 @@ router.post("/", auth_1.authenticateJWT, subscriptions_1.SubscriptionController.
  *                   name: "Netflix Premium Family - Updated"
  *                   email: "netflix@example.com"
  *                   availableSlots: 3
+ *                   countryId: "cm4c456def789abc123"
+ *                   country:
+ *                     id: "cm4c456def789abc123"
+ *                     name: "Canada"
+ *                     code: "CA"
+ *                     alpha3: "CAN"
  *                   userPrice: 5.99
  *                   currency: "USD"
  *                   isActive: true
@@ -408,10 +429,11 @@ router.delete("/:id", auth_1.authenticateJWT, subscriptions_1.SubscriptionContro
  *           default: 10
  *         description: Number of subscriptions per page
  *       - in: query
- *         name: country
+ *         name: countryId
  *         schema:
  *           type: string
- *         description: Filter by country
+ *           format: cuid
+ *         description: Filter by country ID
  *       - in: query
  *         name: maxPrice
  *         schema:
@@ -464,7 +486,12 @@ router.delete("/:id", auth_1.authenticateJWT, subscriptions_1.SubscriptionContro
  *                     name: "Netflix Premium Family"
  *                     email: "netflix@example.com"
  *                     availableSlots: 3
- *                     country: "US"
+ *                     countryId: "cm4c123abc456def789"
+ *                     country:
+ *                       id: "cm4c123abc456def789"
+ *                       name: "United States"
+ *                       code: "US"
+ *                       alpha3: "USA"
  *                     userPrice: 4.99
  *                     currency: "USD"
  *                     isActive: true

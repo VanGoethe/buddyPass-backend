@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 import { SubscriptionService } from "../../../src/services/subscriptions";
 import { ISubscriptionRepository } from "../../../src/types/subscriptions";
 import { IServiceProviderRepository } from "../../../src/types/serviceProviders";
+import { ICountryRepository } from "../../../src/types/countries";
 import { Subscription } from "../../../src/models/subscriptions";
 
 // Mock bcrypt
@@ -31,6 +32,23 @@ const mockServiceProviderRepository: jest.Mocked<IServiceProviderRepository> = {
   update: jest.fn(),
   delete: jest.fn(),
   existsByName: jest.fn(),
+  addSupportedCountries: jest.fn(),
+  removeSupportedCountries: jest.fn(),
+  getSupportedCountries: jest.fn(),
+};
+
+const mockCountryRepository: jest.Mocked<ICountryRepository> = {
+  create: jest.fn(),
+  findById: jest.fn(),
+  findMany: jest.fn(),
+  update: jest.fn(),
+  delete: jest.fn(),
+  findByCode: jest.fn(),
+  findByAlpha3: jest.fn(),
+  findActive: jest.fn(),
+  existsByName: jest.fn(),
+  existsByCode: jest.fn(),
+  existsByAlpha3: jest.fn(),
 };
 
 describe("SubscriptionService", () => {
@@ -40,7 +58,8 @@ describe("SubscriptionService", () => {
     jest.clearAllMocks();
     subscriptionService = new SubscriptionService(
       mockSubscriptionRepository,
-      mockServiceProviderRepository
+      mockServiceProviderRepository,
+      mockCountryRepository
     );
   });
 
@@ -51,7 +70,7 @@ describe("SubscriptionService", () => {
       email: "test@example.com",
       password: "password123",
       availableSlots: 4,
-      country: "US",
+      countryId: "country_123",
       userPrice: 15.99,
       currency: "USD",
       metadata: { plan: "premium" },
@@ -70,11 +89,11 @@ describe("SubscriptionService", () => {
     const mockCreatedSubscription = {
       id: "sub_123",
       serviceProviderId: "sp_123",
+      countryId: "country_123",
       name: "Netflix Premium",
       email: "test@example.com",
       passwordHash: "hashedPassword",
       availableSlots: 4,
-      country: "US",
       expiresAt: null,
       renewalInfo: null,
       userPrice: { toString: () => "15.99" } as any,
@@ -83,15 +102,51 @@ describe("SubscriptionService", () => {
       isActive: true,
       createdAt: new Date(),
       updatedAt: new Date(),
+      country: {
+        id: "country_123",
+        name: "United States",
+        code: "US",
+        alpha3: "USA",
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
     };
 
     it("should create a subscription successfully", async () => {
-      mockServiceProviderRepository.findById.mockResolvedValue(
-        mockServiceProvider
-      );
+      mockServiceProviderRepository.findById.mockResolvedValue({
+        ...mockServiceProvider,
+        supportedCountries: [
+          {
+            country: {
+              id: "country_123",
+              name: "United States",
+              code: "US",
+              alpha3: "USA",
+              isActive: true,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+          },
+        ],
+      });
+      // Mock country validation
+      mockCountryRepository.findById.mockResolvedValue({
+        id: "country_123",
+        name: "United States",
+        code: "US",
+        alpha3: "USA",
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
       mockSubscriptionRepository.existsByEmail.mockResolvedValue(false);
       mockBcrypt.hash.mockResolvedValue("hashedPassword" as never);
       mockSubscriptionRepository.create.mockResolvedValue(
+        mockCreatedSubscription
+      );
+      // Mock the findById call after creation to get full subscription with relations
+      mockSubscriptionRepository.findById.mockResolvedValue(
         mockCreatedSubscription
       );
 
@@ -100,7 +155,8 @@ describe("SubscriptionService", () => {
       );
 
       expect(mockServiceProviderRepository.findById).toHaveBeenCalledWith(
-        "sp_123"
+        "sp_123",
+        true
       );
       expect(mockSubscriptionRepository.existsByEmail).toHaveBeenCalledWith(
         "test@example.com"
@@ -122,16 +178,40 @@ describe("SubscriptionService", () => {
       ).rejects.toThrow("Service provider not found");
 
       expect(mockServiceProviderRepository.findById).toHaveBeenCalledWith(
-        "sp_123"
+        "sp_123",
+        true
       );
       expect(mockSubscriptionRepository.existsByEmail).not.toHaveBeenCalled();
       expect(mockSubscriptionRepository.create).not.toHaveBeenCalled();
     });
 
     it("should throw error if email already exists", async () => {
-      mockServiceProviderRepository.findById.mockResolvedValue(
-        mockServiceProvider
-      );
+      mockServiceProviderRepository.findById.mockResolvedValue({
+        ...mockServiceProvider,
+        supportedCountries: [
+          {
+            country: {
+              id: "country_123",
+              name: "United States",
+              code: "US",
+              alpha3: "USA",
+              isActive: true,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+          },
+        ],
+      });
+      // Mock country validation
+      mockCountryRepository.findById.mockResolvedValue({
+        id: "country_123",
+        name: "United States",
+        code: "US",
+        alpha3: "USA",
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
       mockSubscriptionRepository.existsByEmail.mockResolvedValue(true);
 
       await expect(
@@ -189,11 +269,11 @@ describe("SubscriptionService", () => {
     const mockSubscription = {
       id: "sub_123",
       serviceProviderId: "sp_123",
+      countryId: "country_123",
       name: "Netflix Premium",
       email: "test@example.com",
       passwordHash: "hashedPassword",
       availableSlots: 4,
-      country: "US",
       expiresAt: null,
       renewalInfo: null,
       userPrice: { toString: () => "15.99" } as any,
@@ -210,7 +290,8 @@ describe("SubscriptionService", () => {
       const result = await subscriptionService.getSubscriptionById("sub_123");
 
       expect(mockSubscriptionRepository.findById).toHaveBeenCalledWith(
-        "sub_123"
+        "sub_123",
+        true
       );
       expect(result.id).toBe("sub_123");
       expect(result.email).toBe("test@example.com");
@@ -232,7 +313,8 @@ describe("SubscriptionService", () => {
       ).rejects.toThrow("Subscription not found");
 
       expect(mockSubscriptionRepository.findById).toHaveBeenCalledWith(
-        "sub_nonexistent"
+        "sub_nonexistent",
+        true
       );
     });
   });
@@ -242,11 +324,11 @@ describe("SubscriptionService", () => {
       {
         id: "sub_1",
         serviceProviderId: "sp_123",
+        countryId: "country_123",
         name: "Netflix Premium",
         email: "test1@example.com",
         passwordHash: "hashedPassword",
         availableSlots: 4,
-        country: "US",
         expiresAt: null,
         renewalInfo: null,
         userPrice: { toString: () => "15.99" } as any,
@@ -259,11 +341,11 @@ describe("SubscriptionService", () => {
       {
         id: "sub_2",
         serviceProviderId: "sp_123",
+        countryId: "country_123",
         name: "Netflix Basic",
         email: "test2@example.com",
         passwordHash: "hashedPassword",
         availableSlots: 1,
-        country: "US",
         expiresAt: null,
         renewalInfo: null,
         userPrice: { toString: () => "8.99" } as any,
@@ -332,11 +414,11 @@ describe("SubscriptionService", () => {
     const mockExistingSubscription = {
       id: "sub_123",
       serviceProviderId: "sp_123",
+      countryId: "country_123",
       name: "Netflix Premium",
       email: "test@example.com",
       passwordHash: "hashedPassword",
       availableSlots: 4,
-      country: "US",
       expiresAt: null,
       renewalInfo: null,
       userPrice: { toString: () => "15.99" } as any,
@@ -360,9 +442,12 @@ describe("SubscriptionService", () => {
     };
 
     it("should update subscription successfully", async () => {
-      mockSubscriptionRepository.findById.mockResolvedValue(
-        mockExistingSubscription
-      );
+      // Mock first findById call (existence check)
+      mockSubscriptionRepository.findById
+        .mockResolvedValueOnce(mockExistingSubscription)
+        // Mock second findById call (get updated data)
+        .mockResolvedValueOnce(mockUpdatedSubscription);
+
       mockSubscriptionRepository.update.mockResolvedValue(
         mockUpdatedSubscription
       );
@@ -373,7 +458,8 @@ describe("SubscriptionService", () => {
       );
 
       expect(mockSubscriptionRepository.findById).toHaveBeenCalledWith(
-        "sub_123"
+        "sub_123",
+        true
       );
       expect(mockSubscriptionRepository.update).toHaveBeenCalledWith(
         "sub_123",
@@ -459,11 +545,11 @@ describe("SubscriptionService", () => {
     const mockSubscription = {
       id: "sub_123",
       serviceProviderId: "sp_123",
+      countryId: "country_123",
       name: "Netflix Premium",
       email: "test@example.com",
       passwordHash: "hashedPassword",
       availableSlots: 4,
-      country: "US",
       expiresAt: null,
       renewalInfo: null,
       userPrice: { toString: () => "15.99" } as any,
@@ -523,11 +609,11 @@ describe("SubscriptionService", () => {
       {
         id: "sub_1",
         serviceProviderId: "sp_123",
+        countryId: "country_123",
         name: "Netflix Premium",
         email: "test1@example.com",
         passwordHash: "hashedPassword",
         availableSlots: 4,
-        country: "US",
         expiresAt: null,
         renewalInfo: null,
         userPrice: { toString: () => "15.99" } as any,
