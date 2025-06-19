@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed error code expectations to match actual implementation (`CONFLICT` instead of `DUPLICATE_ENTRY`)
   - Fixed auth integration tests to match actual user response structure (removed non-existent `isActive` and `isVerified` fields)
   - Fixed logout message expectation to match actual implementation ("Logout successful")
+- **Test ID Format Consistency**: Fixed ServiceProvider test ID format to use consistent `sp_` prefix
+  - Corrected mock response ID from `"1"` to `"sp_1"` in controller tests
+  - Maintained consistency with rest of codebase that uses `sp_123`, `sp_1`, `sp_2` format for ServiceProvider IDs
+  - Ensured all downstream references use consistent ID format across test suite
 
 ### Changed
 

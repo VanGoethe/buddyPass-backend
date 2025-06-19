@@ -323,7 +323,7 @@ describe("ServiceProviderController", () => {
     const mockServiceProvidersResponse = {
       serviceProviders: [
         {
-          id: "1",
+          id: "sp_1",
           name: "Netflix",
           description: "Streaming service",
           metadata: null,
