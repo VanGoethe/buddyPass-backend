@@ -6,6 +6,7 @@
 import { Router, Request, Response } from "express";
 import passport from "../config/passport";
 import { container } from "../container";
+import { getRateLimitForEndpoint } from "../config";
 import {
   authenticateJWT,
   authRateLimit,
@@ -22,21 +23,23 @@ import {
 const router = Router();
 const userController = container.getUserController();
 
-// Rate limiting for user auth endpoints
-// More lenient limits in test environment to prevent test failures
-const isTestEnv = process.env.NODE_ENV === "test";
+// Rate limiting for user auth endpoints using centralized configuration
+const loginConfig = getRateLimitForEndpoint("login");
+const registerConfig = getRateLimitForEndpoint("register");
+const passwordChangeConfig = getRateLimitForEndpoint("passwordChange");
+
 const loginRateLimit = authRateLimit(
-  isTestEnv ? 100 : 5,
-  isTestEnv ? 60 * 1000 : 15 * 60 * 1000
-); // Test: 100 attempts per minute, Prod: 5 attempts per 15 minutes
+  loginConfig.maxAttempts,
+  loginConfig.windowMs
+);
 const registerRateLimit = authRateLimit(
-  isTestEnv ? 50 : 3,
-  isTestEnv ? 60 * 1000 : 60 * 60 * 1000
-); // Test: 50 attempts per minute, Prod: 3 attempts per hour
+  registerConfig.maxAttempts,
+  registerConfig.windowMs
+);
 const passwordChangeRateLimit = authRateLimit(
-  isTestEnv ? 50 : 3,
-  isTestEnv ? 60 * 1000 : 60 * 60 * 1000
-); // Test: 50 attempts per minute, Prod: 3 attempts per hour
+  passwordChangeConfig.maxAttempts,
+  passwordChangeConfig.windowMs
+);
 
 /**
  * @swagger

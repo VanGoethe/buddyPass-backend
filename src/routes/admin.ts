@@ -5,15 +5,25 @@
 
 import { Router, Request, Response } from "express";
 import { body } from "express-validator";
+import { getRateLimitForEndpoint } from "../config";
 import {
   authenticateJWT,
   requireAdmin,
   validateRequest,
+  authRateLimit,
 } from "../middleware/auth";
 
 const router = Router();
 
-// Apply authentication and admin requirement to all admin routes
+// Rate limiting for admin endpoints using centralized configuration
+const adminConfig = getRateLimitForEndpoint("admin");
+const adminRateLimit = authRateLimit(
+  adminConfig.maxAttempts,
+  adminConfig.windowMs
+);
+
+// Apply rate limiting, authentication and admin requirement to all admin routes
+router.use(adminRateLimit);
 router.use(authenticateJWT);
 router.use(requireAdmin);
 

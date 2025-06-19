@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Centralized Rate Limiting Configuration**: Implemented comprehensive centralized rate limiting system
+  - Created `src/config/rateLimiting.ts` with environment-specific configurations (production, development, test)
+  - Supports per-endpoint rate limiting: login, register, password change, general API, and admin operations
+  - Environment-aware configurations: strict limits for production, lenient for development, very lenient for tests
+  - Type-safe configuration with interfaces and helper functions
+  - Comprehensive test suite with 16 test cases covering all environments and scenarios
+  - Added rate limiting to admin routes for enhanced security
+  - Improved maintainability by removing hardcoded rate limits from route files
 - **Comprehensive Validation Tests**: Added extensive unit tests for all validation functions
   - Complete test coverage for `registerValidation`, `loginValidation`, `refreshTokenValidation`, `updateProfileValidation`, and `changePasswordValidation`
   - Boundary testing for name length limits and avatar URL validation
@@ -17,28 +25,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Test ID Format Consistency**: Fixed ServiceProvider test ID format to use consistent `sp_` prefix
+  - Corrected mock response ID from `"1"` to `"sp_1"` in controller tests
+  - Maintained consistency with rest of codebase that uses `sp_123`, `sp_1`, `sp_2` format for ServiceProvider IDs
+  - Ensured all downstream references use consistent ID format across test suite
 - **Logout Authentication**: Fixed logout endpoint to use optional authentication instead of required authentication
   - Changed logout route from `authenticateJWT` to `optionalAuth` middleware
-  - Logout now works with valid tokens, expired tokens, or no tokens at all
-  - Updated Swagger documentation to reflect optional authentication for logout
-  - Improved user experience by allowing logout even when tokens are expired
+  - Logout now works with valid tokens, expired tokens, or no tokens
+  - Better user experience - no more "can't logout because token expired" scenarios
+  - Updated Swagger documentation to reflect optional authentication for logout endpoint
 - **Test Suite Alignment**: Fixed failing tests to match correct implementation
   - Fixed ServiceProvider tests to use correct pagination structure with nested `pagination` object
   - Updated E2E tests to match actual validation messages (name max 100 chars, description max 500 chars)
   - Fixed error code expectations to match actual implementation (`CONFLICT` instead of `DUPLICATE_ENTRY`)
   - Fixed auth integration tests to match actual user response structure (removed non-existent `isActive` and `isVerified` fields)
   - Fixed logout message expectation to match actual implementation ("Logout successful")
-- **Test ID Format Consistency**: Fixed ServiceProvider test ID format to use consistent `sp_` prefix
-  - Corrected mock response ID from `"1"` to `"sp_1"` in controller tests
-  - Maintained consistency with rest of codebase that uses `sp_123`, `sp_1`, `sp_2` format for ServiceProvider IDs
-  - Ensured all downstream references use consistent ID format across test suite
 
 ### Changed
 
-- **API Documentation**: Updated logout endpoint documentation to indicate authentication is optional
-  - Added multiple security schemes in Swagger (`BearerAuth` and empty for no auth)
-  - Removed 401 Unauthorized response from logout endpoint documentation
-  - Enhanced description to clarify that logout works with both valid and expired tokens
+- **Rate Limiting Architecture**: Migrated from hardcoded, scattered rate limits to centralized configuration
+  - Removed environment detection logic from route files
+  - All rate limiting now managed through `getRateLimitForEndpoint()` function
+  - Better separation of concerns between routing and configuration
+  - Easier to modify rate limits without touching route files
 
 ## [1.7.3] - 2025-06-19
 
