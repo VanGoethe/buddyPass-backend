@@ -1045,6 +1045,35 @@ const swaggerDefinition: SwaggerDefinition = {
         },
         required: ["isActive"],
       },
+      AdminUpdateUserRequest: {
+        type: "object",
+        properties: {
+          name: {
+            type: "string",
+            minLength: 2,
+            maxLength: 100,
+            description: "User display name",
+          },
+          avatar: {
+            type: "string",
+            format: "uri",
+            description: "User avatar URL",
+            nullable: true,
+          },
+        },
+        additionalProperties: false,
+      },
+      UpdateUserRoleRequest: {
+        type: "object",
+        properties: {
+          role: {
+            type: "string",
+            enum: ["USER", "ADMIN"],
+            description: "User role",
+          },
+        },
+        required: ["role"],
+      },
 
       // Common Response Schemas
       SuccessResponse: {

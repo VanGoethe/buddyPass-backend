@@ -327,23 +327,18 @@ describe("ServiceProviderController", () => {
           name: "Netflix",
           description: "Streaming service",
           metadata: null,
-          createdAt: "2025-06-04T21:00:00.000Z",
-          updatedAt: "2025-06-04T21:00:00.000Z",
-        },
-        {
-          id: "sp_2",
-          name: "Spotify",
-          description: "Music service",
-          metadata: null,
-          createdAt: "2025-06-04T21:00:00.000Z",
-          updatedAt: "2025-06-04T21:00:00.000Z",
+          createdAt: "2024-01-01T00:00:00.000Z",
+          updatedAt: "2024-01-01T00:00:00.000Z",
         },
       ],
-      total: 2,
-      page: 1,
-      limit: 10,
-      hasNext: false,
-      hasPrevious: false,
+      pagination: {
+        total: 1,
+        page: 1,
+        limit: 10,
+        totalPages: 1,
+        hasNext: false,
+        hasPrevious: false,
+      },
     };
 
     beforeEach(() => {

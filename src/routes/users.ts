@@ -6,24 +6,40 @@
 import { Router, Request, Response } from "express";
 import passport from "../config/passport";
 import { container } from "../container";
+import { getRateLimitForEndpoint } from "../config";
 import {
   authenticateJWT,
   authRateLimit,
   validateRequest,
+  optionalAuth,
 } from "../middleware/auth";
 import {
   registerValidation,
   loginValidation,
+  updateProfileValidation,
   changePasswordValidation,
 } from "../utils/validation";
 
 const router = Router();
 const userController = container.getUserController();
 
-// Rate limiting for user auth endpoints
-const loginRateLimit = authRateLimit(5, 15 * 60 * 1000); // 5 attempts per 15 minutes
-const registerRateLimit = authRateLimit(3, 60 * 60 * 1000); // 3 attempts per hour
-const passwordChangeRateLimit = authRateLimit(3, 60 * 60 * 1000); // 3 attempts per hour
+// Rate limiting for user auth endpoints using centralized configuration
+const loginConfig = getRateLimitForEndpoint("login");
+const registerConfig = getRateLimitForEndpoint("register");
+const passwordChangeConfig = getRateLimitForEndpoint("passwordChange");
+
+const loginRateLimit = authRateLimit(
+  loginConfig.maxAttempts,
+  loginConfig.windowMs
+);
+const registerRateLimit = authRateLimit(
+  registerConfig.maxAttempts,
+  registerConfig.windowMs
+);
+const passwordChangeRateLimit = authRateLimit(
+  passwordChangeConfig.maxAttempts,
+  passwordChangeConfig.windowMs
+);
 
 /**
  * @swagger
@@ -171,9 +187,11 @@ router.post(
  * /users/logout:
  *   post:
  *     summary: Logout user (client-side token disposal)
- *     description: Instructs client to dispose of JWT token. No server-side action required for stateless JWT.
+ *     description: Instructs client to dispose of JWT token. No server-side action required for stateless JWT. Authentication is optional - works with both valid and expired tokens.
  *     tags: [Authentication]
- *     security: []
+ *     security:
+ *       - BearerAuth: []
+ *       - {}
  *     responses:
  *       200:
  *         description: Logout successful
@@ -183,11 +201,13 @@ router.post(
  *               $ref: '#/components/schemas/SuccessResponse'
  *             example:
  *               success: true
- *               message: "Logged out successfully"
+ *               message: "Logout successful"
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.post("/logout", (req: Request, res: Response) => {
+// The logout route uses optionalAuth to allow both authenticated and unauthenticated users to access it.
+// This is because the client-side token disposal does not require server-side validation of the token.
+router.post("/logout", optionalAuth, (req: Request, res: Response) => {
   userController.logout(req, res);
 });
 
@@ -291,9 +311,15 @@ router.get("/profile", authenticateJWT, (req: Request, res: Response) => {
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.put("/profile", authenticateJWT, (req: Request, res: Response) => {
-  userController.updateProfile(req, res);
-});
+router.put(
+  "/profile",
+  authenticateJWT,
+  updateProfileValidation,
+  validateRequest,
+  (req: Request, res: Response) => {
+    userController.updateProfile(req, res);
+  }
+);
 
 /**
  * @swagger

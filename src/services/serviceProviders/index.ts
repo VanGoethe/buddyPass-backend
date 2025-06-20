@@ -90,11 +90,14 @@ export class ServiceProviderService implements IServiceProviderService {
 
     return {
       serviceProviders,
-      total: result.total,
-      page,
-      limit,
-      hasNext: page < totalPages,
-      hasPrevious: page > 1,
+      pagination: {
+        total: result.total,
+        page,
+        limit,
+        totalPages,
+        hasNext: page < totalPages,
+        hasPrevious: page > 1,
+      },
     };
   }
 

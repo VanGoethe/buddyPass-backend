@@ -49,11 +49,14 @@ export interface ServiceProviderResponse {
 
 export interface ServiceProviderListResponse {
   serviceProviders: ServiceProviderResponse[];
-  total: number;
-  page: number;
-  limit: number;
-  hasNext: boolean;
-  hasPrevious: boolean;
+  pagination: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    hasNext: boolean;
+    hasPrevious: boolean;
+  };
 }
 
 // Query Options

@@ -36,6 +36,23 @@ export const refreshTokenValidation = [
   body("refreshToken").notEmpty().withMessage("Refresh token is required"),
 ];
 
+/**
+ * Profile update validation for user-facing profile updates
+ * Note: This validation is for user profile updates via /users/profile endpoint.
+ * Admin-only fields like 'role' and 'isActive' are validated separately in admin routes.
+ * The UpdateUserData type includes these fields for repository flexibility,
+ * but user profile updates should only allow name and avatar changes.
+ */
+export const updateProfileValidation = [
+  body("name")
+    .optional()
+    .trim()
+    .isLength({ min: 1, max: 50 })
+    .withMessage("Name must be between 1 and 50 characters when provided"),
+
+  body("avatar").optional().isURL().withMessage("Avatar must be a valid URL"),
+];
+
 export const changePasswordValidation = [
   body("currentPassword")
     .notEmpty()

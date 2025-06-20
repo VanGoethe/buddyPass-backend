@@ -13,8 +13,8 @@ const serviceProviderController = container_1.container.getServiceProviderContro
  * @swagger
  * /service-providers:
  *   get:
- *     summary: Get list of service providers
- *     description: Retrieve service providers with pagination and search. Public endpoint with optional authentication for personalized results.
+ *     summary: Get all service providers
+ *     description: Retrieve a paginated list of service providers with optional filtering and searching capabilities.
  *     tags: [Service Providers]
  *     security:
  *       - BearerAuth: []
@@ -27,33 +27,45 @@ const serviceProviderController = container_1.container.getServiceProviderContro
  *           minimum: 1
  *           default: 1
  *         description: Page number for pagination
+ *         example: 1
  *       - in: query
  *         name: limit
  *         schema:
  *           type: integer
  *           minimum: 1
- *           maximum: 50
+ *           maximum: 100
  *           default: 10
- *         description: Number of service providers per page
+ *         description: Number of items per page (max 100)
+ *         example: 10
  *       - in: query
  *         name: search
  *         schema:
  *           type: string
- *         description: Search service providers by name or description
+ *         description: Search term for service provider name or description
+ *         example: "Netflix"
  *       - in: query
  *         name: sortBy
  *         schema:
  *           type: string
- *           enum: [name, createdAt, updatedAt]
- *           default: name
- *         description: Sort field
+ *           enum: [name, createdAt]
+ *           default: createdAt
+ *         description: Field to sort by
+ *         example: "name"
  *       - in: query
  *         name: sortOrder
  *         schema:
  *           type: string
  *           enum: [asc, desc]
- *           default: asc
+ *           default: desc
  *         description: Sort order
+ *         example: "asc"
+ *       - in: query
+ *         name: countryId
+ *         schema:
+ *           type: string
+ *           format: cuid
+ *         description: Filter by supported country ID
+ *         example: "cm4c123abc456def789"
  *     responses:
  *       200:
  *         description: Service providers retrieved successfully
@@ -91,8 +103,18 @@ const serviceProviderController = container_1.container.getServiceProviderContro
  *                     description: "Video streaming service with movies and TV shows"
  *                     metadata:
  *                       category: "Entertainment"
- *                       supportedCountries: ["US", "CA", "UK"]
  *                       maxSlots: 4
+ *                       website: "https://netflix.com"
+ *                       subscriptionTypes: ["Monthly", "Annual"]
+ *                     supportedCountries:
+ *                       - id: "cm4c123abc456def789"
+ *                         name: "United States"
+ *                         code: "US"
+ *                         alpha3: "USA"
+ *                       - id: "cm4c456def789abc123"
+ *                         name: "Canada"
+ *                         code: "CA"
+ *                         alpha3: "CAN"
  *                     createdAt: "2025-06-04T20:50:09.000Z"
  *                     updatedAt: "2025-06-04T20:50:09.000Z"
  *                   - id: "cm4sp456def789abc"
@@ -100,8 +122,16 @@ const serviceProviderController = container_1.container.getServiceProviderContro
  *                     description: "Music streaming platform"
  *                     metadata:
  *                       category: "Music"
- *                       supportedCountries: ["US", "CA", "UK", "EU"]
  *                       maxSlots: 6
+ *                     supportedCountries:
+ *                       - id: "cm4c123abc456def789"
+ *                         name: "United States"
+ *                         code: "US"
+ *                         alpha3: "USA"
+ *                       - id: "cm4c789ghi123jkl456"
+ *                         name: "United Kingdom"
+ *                         code: "GB"
+ *                         alpha3: "GBR"
  *                     createdAt: "2025-06-04T19:50:09.000Z"
  *                     updatedAt: "2025-06-04T19:50:09.000Z"
  *                 pagination:
@@ -167,9 +197,17 @@ router.get("/", auth_1.optionalAuth, serviceProviders_1.ServiceProviderControlle
  *                   description: "Video streaming service with movies and TV shows"
  *                   metadata:
  *                     category: "Entertainment"
- *                     supportedCountries: ["US", "CA", "UK"]
  *                     maxSlots: 4
  *                     website: "https://netflix.com"
+ *                   supportedCountries:
+ *                     - id: "cm4c123abc456def789"
+ *                       name: "United States"
+ *                       code: "US"
+ *                       alpha3: "USA"
+ *                     - id: "cm4c456def789abc123"
+ *                       name: "Canada"
+ *                       code: "CA"
+ *                       alpha3: "CAN"
  *                   subscriptionCount: 15
  *                   averagePrice: 4.99
  *                   createdAt: "2025-06-04T20:50:09.000Z"
@@ -200,10 +238,10 @@ router.get("/:id", auth_1.optionalAuth, serviceProviders_1.ServiceProviderContro
  *             description: "Disney streaming service with movies, shows, and original content"
  *             metadata:
  *               category: "Entertainment"
- *               supportedCountries: ["US", "CA", "UK", "AU"]
  *               maxSlots: 4
  *               website: "https://disneyplus.com"
  *               subscriptionTypes: ["Monthly", "Annual"]
+ *             supportedCountryIds: ["cm4c123abc456def789", "cm4c456def789abc123", "cm4c789ghi123jkl456"]
  *     responses:
  *       201:
  *         description: Service provider created successfully
@@ -228,10 +266,22 @@ router.get("/:id", auth_1.optionalAuth, serviceProviders_1.ServiceProviderContro
  *                   description: "Disney streaming service with movies, shows, and original content"
  *                   metadata:
  *                     category: "Entertainment"
- *                     supportedCountries: ["US", "CA", "UK", "AU"]
  *                     maxSlots: 4
  *                     website: "https://disneyplus.com"
  *                     subscriptionTypes: ["Monthly", "Annual"]
+ *                   supportedCountries:
+ *                     - id: "cm4c123abc456def789"
+ *                       name: "United States"
+ *                       code: "US"
+ *                       alpha3: "USA"
+ *                     - id: "cm4c456def789abc123"
+ *                       name: "Canada"
+ *                       code: "CA"
+ *                       alpha3: "CAN"
+ *                     - id: "cm4c789ghi123jkl456"
+ *                       name: "United Kingdom"
+ *                       code: "GB"
+ *                       alpha3: "GBR"
  *                   createdAt: "2025-06-04T21:00:09.000Z"
  *                   updatedAt: "2025-06-04T21:00:09.000Z"
  *               message: "Service provider created successfully"
@@ -277,26 +327,15 @@ router.post("/", auth_1.authenticateJWT, serviceProviders_1.ServiceProviderContr
  *       content:
  *         application/json:
  *           schema:
- *             type: object
- *             properties:
- *               name:
- *                 type: string
- *                 minLength: 1
- *                 description: Service provider name
- *               description:
- *                 type: string
- *                 description: Service provider description
- *               metadata:
- *                 type: object
- *                 description: Additional metadata (flexible structure)
+ *             $ref: '#/components/schemas/UpdateServiceProviderRequest'
  *           example:
  *             name: "Netflix Premium"
  *             description: "Premium video streaming service with 4K content and multiple screens"
  *             metadata:
  *               category: "Entertainment"
- *               supportedCountries: ["US", "CA", "UK", "EU"]
  *               maxSlots: 5
  *               features: ["4K", "HDR", "Multiple Screens"]
+ *             supportedCountryIds: ["cm4c123abc456def789", "cm4c456def789abc123", "cm4c789ghi123jkl456"]
  *     responses:
  *       200:
  *         description: Service provider updated successfully
@@ -321,9 +360,21 @@ router.post("/", auth_1.authenticateJWT, serviceProviders_1.ServiceProviderContr
  *                   description: "Premium video streaming service with 4K content and multiple screens"
  *                   metadata:
  *                     category: "Entertainment"
- *                     supportedCountries: ["US", "CA", "UK", "EU"]
  *                     maxSlots: 5
  *                     features: ["4K", "HDR", "Multiple Screens"]
+ *                   supportedCountries:
+ *                     - id: "cm4c123abc456def789"
+ *                       name: "United States"
+ *                       code: "US"
+ *                       alpha3: "USA"
+ *                     - id: "cm4c456def789abc123"
+ *                       name: "Canada"
+ *                       code: "CA"
+ *                       alpha3: "CAN"
+ *                     - id: "cm4c789ghi123jkl456"
+ *                       name: "United Kingdom"
+ *                       code: "GB"
+ *                       alpha3: "GBR"
  *                   createdAt: "2025-06-04T20:50:09.000Z"
  *                   updatedAt: "2025-06-04T21:05:09.000Z"
  *               message: "Service provider updated successfully"

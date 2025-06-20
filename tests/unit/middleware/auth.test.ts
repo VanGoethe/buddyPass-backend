@@ -166,6 +166,7 @@ describe("Authentication Middleware", () => {
         name: mockUser.name,
         avatar: mockUser.avatar,
         provider: mockUser.provider,
+        role: mockUser.role,
         isVerified: mockUser.isVerified,
         isActive: mockUser.isActive,
       });

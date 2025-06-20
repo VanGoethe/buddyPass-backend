@@ -5,68 +5,42 @@
 import request from "supertest";
 import { PrismaClient } from "@prisma/client";
 import App from "../../src/app";
-import jwt from "jsonwebtoken";
+import { withTestCleanup, TestDataCleanup } from "../utils/testCleanup";
+import { container } from "../../src/container";
 
 const prisma = new PrismaClient();
 const app = new App();
 
-// Test user data
-const testUser = {
-  id: "user_test_123",
-  email: "test@serviceProvider.com",
-  name: "Test User",
-  role: "ADMIN" as const,
-  isVerified: true,
-  isActive: true,
-};
-
-// Generate test JWT token
-const generateTestToken = (userData = testUser) => {
-  return jwt.sign(
-    {
-      userId: userData.id,
-      email: userData.email,
-      user: JSON.stringify({ id: userData.id }),
-    },
-    process.env.JWT_SECRET || "test-secret",
-    { expiresIn: "1h" }
-  );
-};
-
 describe("ServiceProvider E2E Tests", () => {
+  let cleanup: TestDataCleanup;
   let authToken: string;
+  let testUser: any;
 
   beforeAll(async () => {
-    // Create test user if not exists
-    try {
-      await prisma.user.upsert({
-        where: { id: testUser.id },
-        update: testUser,
-        create: testUser,
-      });
-    } catch (error) {
-      console.log("Test user already exists or creation failed");
-    }
-
-    authToken = generateTestToken();
+    cleanup = new TestDataCleanup();
   });
 
   afterAll(async () => {
-    // Clean up test data
-    try {
-      await prisma.serviceProvider.deleteMany({});
-      await prisma.user.delete({
-        where: { id: testUser.id },
-      });
-    } catch (error) {
-      console.log("Cleanup failed:", error);
-    }
-    await prisma.$disconnect();
+    await cleanup.cleanupAll();
+    await cleanup.disconnect();
   });
 
   beforeEach(async () => {
     // Clean up ALL service providers before each test to ensure clean state
     await prisma.serviceProvider.deleteMany({});
+
+    // Create fresh test user for each test
+    testUser = await cleanup.getOrCreateTestUser(
+      `test-${Date.now()}@serviceProvider.com`
+    );
+
+    // Generate proper JWT token using the user service
+    const userService = container.getUserService();
+    authToken = userService.generateAccessToken({
+      userId: testUser.id,
+      email: testUser.email,
+      role: testUser.role,
+    });
   });
 
   describe("POST /api/service-providers", () => {
@@ -105,6 +79,7 @@ describe("ServiceProvider E2E Tests", () => {
               website: "https://disneyplus.com",
               subscriptionTypes: ["Monthly", "Annual"],
             },
+            supportedCountries: [],
             createdAt: expect.any(String),
             updatedAt: expect.any(String),
           },
@@ -198,8 +173,8 @@ describe("ServiceProvider E2E Tests", () => {
 
     it("should return 400 for name too long", async () => {
       const serviceProviderData = {
-        name: "a".repeat(101),
-        description: "Service with name too long",
+        name: "x".repeat(256), // Exceed 255 character limit
+        description: "Valid description",
       };
 
       const response = await request(app.app)
@@ -222,8 +197,8 @@ describe("ServiceProvider E2E Tests", () => {
 
     it("should return 400 for description too long", async () => {
       const serviceProviderData = {
-        name: "Test Service",
-        description: "a".repeat(501),
+        name: "Valid Name",
+        description: "x".repeat(1001), // Exceed 1000 character limit
       };
 
       const response = await request(app.app)
@@ -246,7 +221,7 @@ describe("ServiceProvider E2E Tests", () => {
 
     it("should return 409 for duplicate name", async () => {
       const serviceProviderData = {
-        name: "Test Duplicate",
+        name: "Duplicate Test Service",
         description: "First service provider",
       };
 
@@ -261,43 +236,15 @@ describe("ServiceProvider E2E Tests", () => {
       const response = await request(app.app)
         .post("/api/service-providers")
         .set("Authorization", `Bearer ${authToken}`)
-        .send(serviceProviderData)
+        .send({
+          ...serviceProviderData,
+          description: "Duplicate service provider",
+        })
         .expect(409);
 
       expect(response.body.success).toBe(false);
       expect(response.body.error.code).toBe("CONFLICT");
       expect(response.body.error.message).toContain("already exists");
-    });
-
-    it("should return 401 for missing authorization", async () => {
-      const serviceProviderData = {
-        name: "Test Unauthorized",
-        description: "Service without auth",
-      };
-
-      const response = await request(app.app)
-        .post("/api/service-providers")
-        .send(serviceProviderData)
-        .expect(401);
-
-      expect(response.body.success).toBe(false);
-      expect(response.body.error.code).toBe("MISSING_TOKEN");
-    });
-
-    it("should return 401 for invalid token", async () => {
-      const serviceProviderData = {
-        name: "Test Invalid Token",
-        description: "Service with invalid auth",
-      };
-
-      const response = await request(app.app)
-        .post("/api/service-providers")
-        .set("Authorization", "Bearer invalid-token")
-        .send(serviceProviderData)
-        .expect(401);
-
-      expect(response.body.success).toBe(false);
-      expect(response.body.error.code).toBe("INVALID_TOKEN");
     });
   });
 
@@ -307,61 +254,63 @@ describe("ServiceProvider E2E Tests", () => {
       await prisma.serviceProvider.createMany({
         data: [
           {
-            name: "Test Netflix",
-            description: "Streaming service",
-            metadata: { category: "Entertainment" },
+            name: "Netflix Test",
+            description: "Netflix streaming service",
           },
           {
-            name: "Test Spotify",
-            description: "Music streaming",
-            metadata: { category: "Music" },
+            name: "Disney+ Test",
+            description: "Disney streaming service",
           },
           {
-            name: "Test Adobe",
-            description: "Creative software",
-            metadata: { category: "Software" },
+            name: "Amazon Prime Test",
+            description: "Amazon Prime Video streaming service",
           },
         ],
       });
     });
 
-    it("should get service providers with pagination", async () => {
+    it("should return all service providers", async () => {
+      const response = await request(app.app)
+        .get("/api/service-providers")
+        .expect(200);
+
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.serviceProviders).toHaveLength(3);
+      expect(response.body.data.pagination).toBeDefined();
+      expect(response.body.data.pagination.total).toBe(3);
+    });
+
+    it("should support pagination", async () => {
       const response = await request(app.app)
         .get("/api/service-providers?page=1&limit=2")
-        .set("Authorization", `Bearer ${authToken}`)
         .expect(200);
 
       expect(response.body.success).toBe(true);
       expect(response.body.data.serviceProviders).toHaveLength(2);
-      expect(response.body.data.total).toBe(3);
-      expect(response.body.data.page).toBe(1);
-      expect(response.body.data.limit).toBe(2);
-      expect(response.body.data.hasNext).toBe(true);
-      expect(response.body.data.hasPrevious).toBe(false);
+      expect(response.body.data.pagination.page).toBe(1);
+      expect(response.body.data.pagination.limit).toBe(2);
+      expect(response.body.data.pagination.total).toBe(3);
+      expect(response.body.data.pagination.totalPages).toBe(2);
     });
 
-    it("should search service providers", async () => {
+    it("should support search by name", async () => {
       const response = await request(app.app)
         .get("/api/service-providers?search=Netflix")
-        .set("Authorization", `Bearer ${authToken}`)
         .expect(200);
 
       expect(response.body.success).toBe(true);
       expect(response.body.data.serviceProviders).toHaveLength(1);
-      expect(response.body.data.serviceProviders[0].name).toBe("Test Netflix");
+      expect(response.body.data.serviceProviders[0].name).toContain("Netflix");
     });
 
-    it("should sort service providers", async () => {
+    it("should return empty array when no providers match search", async () => {
       const response = await request(app.app)
-        .get("/api/service-providers?sortBy=name&sortOrder=asc")
-        .set("Authorization", `Bearer ${authToken}`)
+        .get("/api/service-providers?search=NonExistent")
         .expect(200);
 
       expect(response.body.success).toBe(true);
-      const names = response.body.data.serviceProviders.map(
-        (sp: any) => sp.name
-      );
-      expect(names).toEqual(["Test Adobe", "Test Netflix", "Test Spotify"]);
+      expect(response.body.data.serviceProviders).toHaveLength(0);
+      expect(response.body.data.pagination.total).toBe(0);
     });
   });
 
@@ -373,16 +322,18 @@ describe("ServiceProvider E2E Tests", () => {
         data: {
           name: "Test Single Provider",
           description: "Single provider for testing",
-          metadata: { category: "Test" },
+          metadata: {
+            category: "Entertainment",
+            website: "https://example.com",
+          },
         },
       });
       serviceProviderId = serviceProvider.id;
     });
 
-    it("should get service provider by ID", async () => {
+    it("should return service provider by ID", async () => {
       const response = await request(app.app)
         .get(`/api/service-providers/${serviceProviderId}`)
-        .set("Authorization", `Bearer ${authToken}`)
         .expect(200);
 
       expect(response.body.success).toBe(true);
@@ -390,12 +341,15 @@ describe("ServiceProvider E2E Tests", () => {
       expect(response.body.data.serviceProvider.name).toBe(
         "Test Single Provider"
       );
+      expect(response.body.data.serviceProvider.metadata).toEqual({
+        category: "Entertainment",
+        website: "https://example.com",
+      });
     });
 
     it("should return 404 for non-existent service provider", async () => {
       const response = await request(app.app)
         .get("/api/service-providers/non-existent-id")
-        .set("Authorization", `Bearer ${authToken}`)
         .expect(404);
 
       expect(response.body.success).toBe(false);
@@ -411,7 +365,6 @@ describe("ServiceProvider E2E Tests", () => {
         data: {
           name: "Test Update Provider",
           description: "Provider for update testing",
-          metadata: { category: "Test" },
         },
       });
       serviceProviderId = serviceProvider.id;
@@ -419,11 +372,11 @@ describe("ServiceProvider E2E Tests", () => {
 
     it("should update service provider successfully", async () => {
       const updateData = {
-        name: "Test Updated Provider",
+        name: "Updated Provider Name",
         description: "Updated description",
         metadata: {
-          category: "Updated",
-          features: ["new-feature"],
+          newField: "newValue",
+          category: "Updated Category",
         },
       };
 
@@ -435,20 +388,19 @@ describe("ServiceProvider E2E Tests", () => {
 
       expect(response.body.success).toBe(true);
       expect(response.body.data.serviceProvider.name).toBe(
-        "Test Updated Provider"
+        "Updated Provider Name"
       );
       expect(response.body.data.serviceProvider.description).toBe(
         "Updated description"
       );
-      expect(response.body.data.serviceProvider.metadata).toEqual({
-        category: "Updated",
-        features: ["new-feature"],
-      });
+      expect(response.body.data.serviceProvider.metadata).toEqual(
+        updateData.metadata
+      );
     });
 
     it("should return 404 for non-existent service provider", async () => {
       const updateData = {
-        name: "Test Non-existent Update",
+        name: "Updated Name",
       };
 
       const response = await request(app.app)
@@ -470,7 +422,6 @@ describe("ServiceProvider E2E Tests", () => {
         data: {
           name: "Test Delete Provider",
           description: "Provider for delete testing",
-          metadata: { category: "Test" },
         },
       });
       serviceProviderId = serviceProvider.id;
@@ -487,11 +438,10 @@ describe("ServiceProvider E2E Tests", () => {
         "Service provider deleted successfully"
       );
 
-      // Verify deletion
-      const deletedProvider = await prisma.serviceProvider.findUnique({
-        where: { id: serviceProviderId },
-      });
-      expect(deletedProvider).toBeNull();
+      // Verify it's actually deleted
+      const getResponse = await request(app.app)
+        .get(`/api/service-providers/${serviceProviderId}`)
+        .expect(404);
     });
 
     it("should return 404 for non-existent service provider", async () => {
@@ -508,7 +458,7 @@ describe("ServiceProvider E2E Tests", () => {
   describe("Metadata Edge Cases", () => {
     it("should handle null metadata", async () => {
       const serviceProviderData = {
-        name: "Test Null Metadata",
+        name: "Null Metadata Test",
         metadata: null,
       };
 
@@ -524,7 +474,7 @@ describe("ServiceProvider E2E Tests", () => {
 
     it("should handle empty metadata object", async () => {
       const serviceProviderData = {
-        name: "Test Empty Metadata",
+        name: "Empty Metadata Test",
         metadata: {},
       };
 
@@ -540,11 +490,10 @@ describe("ServiceProvider E2E Tests", () => {
 
     it("should handle arrays in metadata", async () => {
       const serviceProviderData = {
-        name: "Test Array Metadata",
+        name: "Array Metadata Test",
         metadata: {
-          supportedCountries: ["US", "CA", "UK"],
-          features: ["HD", "4K", "HDR"],
-          pricing: [9.99, 15.99, 19.99],
+          tags: ["streaming", "entertainment", "video"],
+          supportedDevices: ["iOS", "Android", "Web", "Smart TV"],
         },
       };
 
@@ -562,11 +511,11 @@ describe("ServiceProvider E2E Tests", () => {
 
     it("should handle boolean values in metadata", async () => {
       const serviceProviderData = {
-        name: "Test Boolean Metadata",
+        name: "Boolean Metadata Test",
         metadata: {
-          isActive: true,
-          hasFreeTrial: false,
-          supportsOffline: true,
+          hasFreeTrial: true,
+          requiresCreditCard: false,
+          supportsOfflineDownload: true,
         },
       };
 

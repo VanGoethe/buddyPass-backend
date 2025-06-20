@@ -161,6 +161,8 @@ export interface UpdateUserData {
   name?: string | null;
   avatar?: string | null;
   password?: string;
+  role?: UserRole;
+  isActive?: boolean;
 }
 
 // Repository interfaces

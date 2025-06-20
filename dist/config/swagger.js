@@ -277,6 +277,20 @@ const swaggerDefinition = {
                         description: "Additional service provider metadata",
                         nullable: true,
                     },
+                    supportedCountries: {
+                        type: "array",
+                        items: {
+                            type: "object",
+                            properties: {
+                                id: { type: "string", format: "cuid" },
+                                name: { type: "string" },
+                                code: { type: "string" },
+                                alpha3: { type: "string" },
+                            },
+                            required: ["id", "name", "code", "alpha3"],
+                        },
+                        description: "List of supported countries for this service provider",
+                    },
                     createdAt: {
                         type: "string",
                         format: "date-time",
@@ -306,8 +320,109 @@ const swaggerDefinition = {
                         type: "object",
                         description: "Additional metadata",
                     },
+                    supportedCountryIds: {
+                        type: "array",
+                        items: {
+                            type: "string",
+                            format: "cuid",
+                        },
+                        description: "Array of country IDs that this service provider supports",
+                    },
                 },
                 required: ["name"],
+            },
+            UpdateServiceProviderRequest: {
+                type: "object",
+                properties: {
+                    name: {
+                        type: "string",
+                        minLength: 1,
+                        description: "Service provider name",
+                    },
+                    description: {
+                        type: "string",
+                        description: "Service provider description",
+                    },
+                    metadata: {
+                        type: "object",
+                        description: "Additional metadata",
+                    },
+                    supportedCountryIds: {
+                        type: "array",
+                        items: {
+                            type: "string",
+                            format: "cuid",
+                        },
+                        description: "Array of country IDs that this service provider supports",
+                    },
+                },
+            },
+            ServiceProviderResponse: {
+                type: "object",
+                properties: {
+                    success: {
+                        type: "boolean",
+                        enum: [true],
+                    },
+                    data: {
+                        $ref: "#/components/schemas/ServiceProvider",
+                    },
+                    message: {
+                        type: "string",
+                        description: "Optional success message",
+                    },
+                },
+                required: ["success", "data"],
+            },
+            ServiceProviderListResponse: {
+                type: "object",
+                properties: {
+                    success: {
+                        type: "boolean",
+                        enum: [true],
+                    },
+                    data: {
+                        type: "object",
+                        properties: {
+                            serviceProviders: {
+                                type: "array",
+                                items: {
+                                    $ref: "#/components/schemas/ServiceProvider",
+                                },
+                                description: "List of service providers",
+                            },
+                            total: {
+                                type: "integer",
+                                description: "Total number of service providers",
+                            },
+                            page: {
+                                type: "integer",
+                                description: "Current page number",
+                            },
+                            limit: {
+                                type: "integer",
+                                description: "Number of items per page",
+                            },
+                            hasNext: {
+                                type: "boolean",
+                                description: "Whether there are more pages",
+                            },
+                            hasPrevious: {
+                                type: "boolean",
+                                description: "Whether there are previous pages",
+                            },
+                        },
+                        required: [
+                            "serviceProviders",
+                            "total",
+                            "page",
+                            "limit",
+                            "hasNext",
+                            "hasPrevious",
+                        ],
+                    },
+                },
+                required: ["success", "data"],
             },
             // Subscription Schemas
             Subscription: {
@@ -322,6 +437,12 @@ const swaggerDefinition = {
                         type: "string",
                         format: "cuid",
                         description: "Associated service provider ID",
+                    },
+                    countryId: {
+                        type: "string",
+                        format: "cuid",
+                        description: "Associated country ID",
+                        nullable: true,
                     },
                     name: {
                         type: "string",
@@ -338,8 +459,15 @@ const swaggerDefinition = {
                         description: "Number of available sharing slots",
                     },
                     country: {
-                        type: "string",
-                        description: "Country restriction",
+                        type: "object",
+                        properties: {
+                            id: { type: "string", format: "cuid" },
+                            name: { type: "string" },
+                            code: { type: "string" },
+                            alpha3: { type: "string" },
+                        },
+                        required: ["id", "name", "code", "alpha3"],
+                        description: "Country information",
                         nullable: true,
                     },
                     expiresAt: {
@@ -348,8 +476,13 @@ const swaggerDefinition = {
                         description: "Subscription expiration date",
                         nullable: true,
                     },
+                    renewalInfo: {
+                        type: "object",
+                        description: "Subscription renewal information",
+                        nullable: true,
+                    },
                     userPrice: {
-                        type: "number",
+                        type: "string",
                         format: "decimal",
                         description: "Price per user slot",
                         nullable: true,
@@ -357,6 +490,11 @@ const swaggerDefinition = {
                     currency: {
                         type: "string",
                         description: "Currency code (e.g., USD, EUR)",
+                        nullable: true,
+                    },
+                    metadata: {
+                        type: "object",
+                        description: "Additional subscription metadata",
                         nullable: true,
                     },
                     isActive: {
@@ -396,6 +534,11 @@ const swaggerDefinition = {
                         format: "cuid",
                         description: "Service provider ID",
                     },
+                    countryId: {
+                        type: "string",
+                        format: "cuid",
+                        description: "Country ID (optional)",
+                    },
                     name: {
                         type: "string",
                         minLength: 1,
@@ -416,14 +559,14 @@ const swaggerDefinition = {
                         maximum: 10,
                         description: "Number of available slots (1-10)",
                     },
-                    country: {
-                        type: "string",
-                        description: "Country restriction",
-                    },
                     expiresAt: {
                         type: "string",
                         format: "date-time",
                         description: "Subscription expiration date",
+                    },
+                    renewalInfo: {
+                        type: "object",
+                        description: "Subscription renewal information",
                     },
                     userPrice: {
                         type: "number",
@@ -436,6 +579,15 @@ const swaggerDefinition = {
                         enum: ["USD", "EUR", "GBP", "CAD", "AUD"],
                         description: "Currency code",
                     },
+                    metadata: {
+                        type: "object",
+                        description: "Additional subscription metadata",
+                    },
+                    isActive: {
+                        type: "boolean",
+                        description: "Whether subscription is active",
+                        default: true,
+                    },
                 },
                 required: [
                     "serviceProviderId",
@@ -444,6 +596,131 @@ const swaggerDefinition = {
                     "password",
                     "availableSlots",
                 ],
+            },
+            UpdateSubscriptionRequest: {
+                type: "object",
+                properties: {
+                    name: {
+                        type: "string",
+                        minLength: 1,
+                        description: "Subscription name",
+                    },
+                    email: {
+                        type: "string",
+                        format: "email",
+                        description: "Subscription email",
+                    },
+                    password: {
+                        type: "string",
+                        description: "Subscription password",
+                    },
+                    availableSlots: {
+                        type: "integer",
+                        minimum: 1,
+                        maximum: 10,
+                        description: "Number of available slots (1-10)",
+                    },
+                    countryId: {
+                        type: "string",
+                        format: "cuid",
+                        description: "Country ID",
+                    },
+                    expiresAt: {
+                        type: "string",
+                        format: "date-time",
+                        description: "Subscription expiration date",
+                    },
+                    renewalInfo: {
+                        type: "object",
+                        description: "Subscription renewal information",
+                    },
+                    userPrice: {
+                        type: "number",
+                        format: "decimal",
+                        minimum: 0,
+                        description: "Price per user slot",
+                    },
+                    currency: {
+                        type: "string",
+                        enum: ["USD", "EUR", "GBP", "CAD", "AUD"],
+                        description: "Currency code",
+                    },
+                    metadata: {
+                        type: "object",
+                        description: "Additional subscription metadata",
+                    },
+                    isActive: {
+                        type: "boolean",
+                        description: "Whether subscription is active",
+                    },
+                },
+            },
+            SubscriptionResponse: {
+                type: "object",
+                properties: {
+                    success: {
+                        type: "boolean",
+                        enum: [true],
+                    },
+                    data: {
+                        $ref: "#/components/schemas/Subscription",
+                    },
+                    message: {
+                        type: "string",
+                        description: "Optional success message",
+                    },
+                },
+                required: ["success", "data"],
+            },
+            SubscriptionListResponse: {
+                type: "object",
+                properties: {
+                    success: {
+                        type: "boolean",
+                        enum: [true],
+                    },
+                    data: {
+                        type: "object",
+                        properties: {
+                            subscriptions: {
+                                type: "array",
+                                items: {
+                                    $ref: "#/components/schemas/Subscription",
+                                },
+                                description: "List of subscriptions",
+                            },
+                            total: {
+                                type: "integer",
+                                description: "Total number of subscriptions",
+                            },
+                            page: {
+                                type: "integer",
+                                description: "Current page number",
+                            },
+                            limit: {
+                                type: "integer",
+                                description: "Number of items per page",
+                            },
+                            hasNext: {
+                                type: "boolean",
+                                description: "Whether there are more pages",
+                            },
+                            hasPrevious: {
+                                type: "boolean",
+                                description: "Whether there are previous pages",
+                            },
+                        },
+                        required: [
+                            "subscriptions",
+                            "total",
+                            "page",
+                            "limit",
+                            "hasNext",
+                            "hasPrevious",
+                        ],
+                    },
+                },
+                required: ["success", "data"],
             },
             // Country Schemas
             Country: {
@@ -751,6 +1028,35 @@ const swaggerDefinition = {
                     },
                 },
                 required: ["isActive"],
+            },
+            AdminUpdateUserRequest: {
+                type: "object",
+                properties: {
+                    name: {
+                        type: "string",
+                        minLength: 2,
+                        maxLength: 100,
+                        description: "User display name",
+                    },
+                    avatar: {
+                        type: "string",
+                        format: "uri",
+                        description: "User avatar URL",
+                        nullable: true,
+                    },
+                },
+                additionalProperties: false,
+            },
+            UpdateUserRoleRequest: {
+                type: "object",
+                properties: {
+                    role: {
+                        type: "string",
+                        enum: ["USER", "ADMIN"],
+                        description: "User role",
+                    },
+                },
+                required: ["role"],
             },
             // Common Response Schemas
             SuccessResponse: {

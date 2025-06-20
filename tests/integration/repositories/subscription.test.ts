@@ -5,6 +5,7 @@
 import { PrismaClient, Prisma } from "@prisma/client";
 import { PrismaSubscriptionRepository } from "../../../src/repositories/subscriptions";
 import { Subscription } from "../../../src/models/subscriptions";
+import { SubscriptionQueryOptions } from "../../../src/types/subscriptions";
 
 // Create a mock Prisma client with proper typing
 const createMockPrisma = () => {
@@ -38,7 +39,7 @@ describe("PrismaSubscriptionRepository", () => {
       password: "originalPassword",
       passwordHash: "hashedPassword",
       availableSlots: 4,
-      country: "US",
+      countryId: "country_123",
       userPrice: 15.99,
       currency: "USD",
       metadata: { plan: "premium" },
@@ -48,11 +49,11 @@ describe("PrismaSubscriptionRepository", () => {
     const mockCreatedSubscription = {
       id: "sub_123",
       serviceProviderId: "sp_123",
+      countryId: "country_123",
       name: "Netflix Premium",
       email: "test@example.com",
       passwordHash: "hashedPassword",
       availableSlots: 4,
-      country: "US",
       expiresAt: null,
       renewalInfo: null,
       userPrice: new Prisma.Decimal("15.99"),
@@ -75,7 +76,7 @@ describe("PrismaSubscriptionRepository", () => {
           email: "test@example.com",
           passwordHash: "hashedPassword",
           availableSlots: 4,
-          country: "US",
+          countryId: "country_123",
           expiresAt: null,
           renewalInfo: null,
           userPrice: new Prisma.Decimal(15.99),
@@ -104,7 +105,7 @@ describe("PrismaSubscriptionRepository", () => {
         name: "Basic Netflix",
         email: "basic@example.com",
         availableSlots: 1,
-        country: null,
+        countryId: null,
         userPrice: null,
         currency: null,
         metadata: null,
@@ -121,7 +122,7 @@ describe("PrismaSubscriptionRepository", () => {
           email: "basic@example.com",
           passwordHash: "hashedPassword",
           availableSlots: 1,
-          country: null,
+          countryId: null,
           expiresAt: null,
           renewalInfo: null,
           userPrice: null,
@@ -150,7 +151,7 @@ describe("PrismaSubscriptionRepository", () => {
       mockPrisma.subscription.create.mockRejectedValue(error);
 
       await expect(repository.create(createData)).rejects.toThrow(
-        "Service provider not found"
+        "Service provider or country not found"
       );
     });
 
@@ -168,11 +169,11 @@ describe("PrismaSubscriptionRepository", () => {
     const mockSubscription = {
       id: "sub_123",
       serviceProviderId: "sp_123",
+      countryId: "country_123",
       name: "Netflix Premium",
       email: "test@example.com",
       passwordHash: "hashedPassword",
       availableSlots: 4,
-      country: "US",
       expiresAt: null,
       renewalInfo: null,
       userPrice: new Prisma.Decimal("15.99"),
@@ -219,11 +220,11 @@ describe("PrismaSubscriptionRepository", () => {
       {
         id: "sub_1",
         serviceProviderId: "sp_123",
+        countryId: "country_123",
         name: "Netflix Premium",
         email: "test1@example.com",
         passwordHash: "hashedPassword",
         availableSlots: 4,
-        country: "US",
         expiresAt: null,
         renewalInfo: null,
         userPrice: new Prisma.Decimal("15.99"),
@@ -236,11 +237,11 @@ describe("PrismaSubscriptionRepository", () => {
       {
         id: "sub_2",
         serviceProviderId: "sp_456",
+        countryId: "country_456",
         name: "Spotify Premium",
         email: "test2@example.com",
         passwordHash: "hashedPassword",
         availableSlots: 2,
-        country: "CA",
         expiresAt: null,
         renewalInfo: null,
         userPrice: new Prisma.Decimal("9.99"),
@@ -352,11 +353,11 @@ describe("PrismaSubscriptionRepository", () => {
     const mockUpdatedSubscription = {
       id: "sub_123",
       serviceProviderId: "sp_123",
+      countryId: "country_123",
       name: "Netflix Premium Updated",
       email: "test@example.com",
       passwordHash: "hashedPassword",
       availableSlots: 5,
-      country: "US",
       expiresAt: null,
       renewalInfo: null,
       userPrice: new Prisma.Decimal("18.99"),
@@ -511,11 +512,11 @@ describe("PrismaSubscriptionRepository", () => {
       {
         id: "sub_1",
         serviceProviderId: "sp_123",
+        countryId: "country_123",
         name: "Netflix Premium",
         email: "test1@example.com",
         passwordHash: "hashedPassword",
         availableSlots: 4,
-        country: "US",
         expiresAt: null,
         renewalInfo: null,
         userPrice: new Prisma.Decimal("15.99"),
