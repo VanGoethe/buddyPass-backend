@@ -55,9 +55,17 @@ describe("PrismaServiceProviderRepository", () => {
 
     it("should create a service provider successfully", async () => {
       // Mock the transaction to return the service provider
-      mockPrisma.$transaction = mockTransaction(
-        jest.fn().mockResolvedValue(mockCreatedServiceProvider)
-      );
+      mockPrisma.$transaction.mockImplementation((callback: any) => {
+        const transactionMock = {
+          serviceProvider: {
+            create: jest.fn().mockResolvedValue(mockCreatedServiceProvider),
+          },
+          serviceProviderCountry: {
+            createMany: jest.fn(),
+          },
+        };
+        return callback(transactionMock);
+      });
 
       const result = await repository.create(createData);
 

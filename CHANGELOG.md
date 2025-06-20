@@ -25,6 +25,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Test Infrastructure Issues**: Resolved multiple test-related code review comments
+  - Fixed missing `mockTransaction` helper in ServiceProvider integration tests - replaced with proper `$transaction.mockImplementation()`
+  - Fixed TypeScript error in serviceProvider repository tests that was preventing test execution
+  - Corrected import issues in subscription repository tests - ensured `SubscriptionQueryOptions` is properly imported
+  - Enhanced validation documentation to clarify scope of `updateProfileValidation` for user profile updates vs admin operations
+  - All test suites now passing (349 tests total with 1 skipped)
+- **Code Quality Improvements**: Addressed validation and type safety concerns
+  - Added comprehensive documentation to `updateProfileValidation` explaining why admin fields (`role`, `isActive`) are excluded
+  - Clarified that profile validation is for user-facing endpoints, not admin management routes
+  - Improved code maintainability by fixing unused imports and undefined helper functions
 - **Test ID Format Consistency**: Fixed ServiceProvider test ID format to use consistent `sp_` prefix
   - Corrected mock response ID from `"1"` to `"sp_1"` in controller tests
   - Maintained consistency with rest of codebase that uses `sp_123`, `sp_1`, `sp_2` format for ServiceProvider IDs
