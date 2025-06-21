@@ -2,6 +2,7 @@
  * Configuration module exports
  */
 export * from "./database";
+export * from "./rateLimiting";
 /**
  * Application configuration constants
  */

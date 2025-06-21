@@ -5,8 +5,11 @@ const prisma = new PrismaClient();
 export class TestDataCleanup {
   private createdUsers: string[] = [];
   private createdCountries: string[] = [];
+  private createdCurrencies: string[] = [];
   private createdServiceProviders: string[] = [];
   private createdSubscriptions: string[] = [];
+  private createdSubscriptionSlots: string[] = [];
+  private createdSubscriptionRequests: string[] = [];
 
   // Track created entities
   trackUser(id: string) {
@@ -17,12 +20,24 @@ export class TestDataCleanup {
     this.createdCountries.push(id);
   }
 
+  trackCurrency(id: string) {
+    this.createdCurrencies.push(id);
+  }
+
   trackServiceProvider(id: string) {
     this.createdServiceProviders.push(id);
   }
 
   trackSubscription(id: string) {
     this.createdSubscriptions.push(id);
+  }
+
+  trackSubscriptionSlot(id: string) {
+    this.createdSubscriptionSlots.push(id);
+  }
+
+  trackSubscriptionRequest(id: string) {
+    this.createdSubscriptionRequests.push(id);
   }
 
   // Clean up methods
@@ -40,10 +55,32 @@ export class TestDataCleanup {
 
   async cleanupSubscriptions() {
     if (this.createdSubscriptions.length > 0) {
+      // Clean up subscription slots and requests first (they depend on subscriptions)
+      await this.cleanupSubscriptionSlots();
+      await this.cleanupSubscriptionRequests();
+
       await prisma.subscription.deleteMany({
         where: { id: { in: this.createdSubscriptions } },
       });
       this.createdSubscriptions = [];
+    }
+  }
+
+  async cleanupSubscriptionSlots() {
+    if (this.createdSubscriptionSlots.length > 0) {
+      await prisma.subscriptionSlot.deleteMany({
+        where: { id: { in: this.createdSubscriptionSlots } },
+      });
+      this.createdSubscriptionSlots = [];
+    }
+  }
+
+  async cleanupSubscriptionRequests() {
+    if (this.createdSubscriptionRequests.length > 0) {
+      await prisma.subscriptionRequest.deleteMany({
+        where: { id: { in: this.createdSubscriptionRequests } },
+      });
+      this.createdSubscriptionRequests = [];
     }
   }
 
@@ -69,11 +106,21 @@ export class TestDataCleanup {
     }
   }
 
+  async cleanupCurrencies() {
+    if (this.createdCurrencies.length > 0) {
+      await prisma.currency.deleteMany({
+        where: { id: { in: this.createdCurrencies } },
+      });
+      this.createdCurrencies = [];
+    }
+  }
+
   // Clean up everything
   async cleanupAll() {
-    await this.cleanupSubscriptions();
+    await this.cleanupSubscriptions(); // This will also cleanup slots and requests
     await this.cleanupServiceProviders();
     await this.cleanupCountries();
+    await this.cleanupCurrencies();
     await this.cleanupUsers();
   }
 
@@ -124,6 +171,23 @@ export class TestDataCleanup {
       this.trackServiceProvider(provider.id);
     }
     return provider;
+  }
+
+  async getOrCreateTestCurrency(code: string, name?: string) {
+    let currency = await prisma.currency.findUnique({ where: { code } });
+    if (!currency) {
+      currency = await prisma.currency.create({
+        data: {
+          name: name || `Test Currency ${code}`,
+          code,
+          symbol: code === "USD" ? "$" : code === "EUR" ? "€" : "£",
+          minorUnit: 2,
+          isActive: true,
+        },
+      });
+      this.trackCurrency(currency.id);
+    }
+    return currency;
   }
 
   // Close connection

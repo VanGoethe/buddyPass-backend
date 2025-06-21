@@ -20,10 +20,18 @@ const subscriptions_3 = require("./controllers/subscriptions");
 const countries_1 = require("./repositories/countries");
 const countries_2 = require("./services/countries");
 const countries_3 = require("./controllers/countries");
+// Currency imports
+const currencies_1 = require("./repositories/currencies");
+const currencies_2 = require("./services/currencies");
+const currencies_3 = require("./controllers/currencies");
 class Container {
     constructor() {
         // Initialize Prisma client
         this.prisma = new client_1.PrismaClient();
+        // Initialize Currency module (base dependency)
+        this.currencyRepository = (0, currencies_1.createCurrencyRepository)(this.prisma);
+        this.currencyService = (0, currencies_2.createCurrencyService)(this.currencyRepository);
+        this.currencyController = (0, currencies_3.createCurrencyController)(this.currencyService);
         // Initialize Country module (base dependency)
         this.countryRepository = (0, countries_1.createCountryRepository)(this.prisma);
         this.countryService = (0, countries_2.createCountryService)(this.countryRepository);
@@ -36,9 +44,15 @@ class Container {
         this.serviceProviderRepository = (0, serviceProviders_1.createServiceProviderRepository)(this.prisma);
         this.serviceProviderService = (0, serviceProviders_2.createServiceProviderService)(this.serviceProviderRepository, this.countryRepository);
         this.serviceProviderController = (0, serviceProviders_3.createServiceProviderController)(this.serviceProviderService);
-        // Initialize Subscription module (depends on ServiceProvider and Country)
-        this.subscriptionRepository = (0, subscriptions_1.createSubscriptionRepository)(this.prisma);
-        this.subscriptionService = (0, subscriptions_2.createSubscriptionService)(this.subscriptionRepository, this.serviceProviderRepository, this.countryRepository);
+        // Initialize Subscription module repositories
+        this.subscriptionRepository = new subscriptions_1.PrismaSubscriptionRepository(this.prisma);
+        this.subscriptionSlotRepository = new subscriptions_1.PrismaSubscriptionSlotRepository(this.prisma);
+        this.subscriptionRequestRepository =
+            new subscriptions_1.PrismaSubscriptionRequestRepository(this.prisma);
+        // Initialize slot assignment service
+        this.slotAssignmentService = new subscriptions_2.SlotAssignmentService(this.subscriptionRepository, this.subscriptionSlotRepository);
+        // Initialize Subscription service with all dependencies
+        this.subscriptionService = new subscriptions_2.SubscriptionService(this.subscriptionRepository, this.subscriptionSlotRepository, this.subscriptionRequestRepository, this.serviceProviderRepository, this.countryRepository, this.slotAssignmentService);
         this.subscriptionController = (0, subscriptions_3.createSubscriptionController)(this.subscriptionService);
     }
     static getInstance() {
@@ -71,8 +85,17 @@ class Container {
     getSubscriptionRepository() {
         return this.subscriptionRepository;
     }
+    getSubscriptionSlotRepository() {
+        return this.subscriptionSlotRepository;
+    }
+    getSubscriptionRequestRepository() {
+        return this.subscriptionRequestRepository;
+    }
     getSubscriptionService() {
         return this.subscriptionService;
+    }
+    getSlotAssignmentService() {
+        return this.slotAssignmentService;
     }
     getSubscriptionController() {
         return this.subscriptionController;
@@ -86,6 +109,16 @@ class Container {
     }
     getCountryController() {
         return this.countryController;
+    }
+    // Currency module getters
+    getCurrencyRepository() {
+        return this.currencyRepository;
+    }
+    getCurrencyService() {
+        return this.currencyService;
+    }
+    getCurrencyController() {
+        return this.currencyController;
     }
     // General getters
     getPrisma() {
@@ -111,8 +144,14 @@ class Container {
                 return this.serviceProviderController;
             case "subscriptionRepository":
                 return this.subscriptionRepository;
+            case "subscriptionSlotRepository":
+                return this.subscriptionSlotRepository;
+            case "subscriptionRequestRepository":
+                return this.subscriptionRequestRepository;
             case "subscriptionService":
                 return this.subscriptionService;
+            case "slotAssignmentService":
+                return this.slotAssignmentService;
             case "subscriptionController":
                 return this.subscriptionController;
             case "countryRepository":
@@ -121,6 +160,12 @@ class Container {
                 return this.countryService;
             case "countryController":
                 return this.countryController;
+            case "currencyRepository":
+                return this.currencyRepository;
+            case "currencyService":
+                return this.currencyService;
+            case "currencyController":
+                return this.currencyController;
             case "prisma":
                 return this.prisma;
             default:

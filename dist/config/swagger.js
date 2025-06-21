@@ -487,9 +487,10 @@ const swaggerDefinition = {
                         description: "Price per user slot",
                         nullable: true,
                     },
-                    currency: {
+                    currencyId: {
                         type: "string",
-                        description: "Currency code (e.g., USD, EUR)",
+                        format: "cuid",
+                        description: "Currency ID reference",
                         nullable: true,
                     },
                     metadata: {
@@ -574,10 +575,10 @@ const swaggerDefinition = {
                         minimum: 0,
                         description: "Price per user slot",
                     },
-                    currency: {
+                    currencyId: {
                         type: "string",
-                        enum: ["USD", "EUR", "GBP", "CAD", "AUD"],
-                        description: "Currency code",
+                        format: "cuid",
+                        description: "Currency ID reference",
                     },
                     metadata: {
                         type: "object",
@@ -640,10 +641,10 @@ const swaggerDefinition = {
                         minimum: 0,
                         description: "Price per user slot",
                     },
-                    currency: {
+                    currencyId: {
                         type: "string",
-                        enum: ["USD", "EUR", "GBP", "CAD", "AUD"],
-                        description: "Currency code",
+                        format: "cuid",
+                        description: "Currency ID reference",
                     },
                     metadata: {
                         type: "object",
@@ -761,10 +762,10 @@ const swaggerDefinition = {
                         description: "Geographic region",
                         nullable: true,
                     },
-                    currency: {
+                    currencyId: {
                         type: "string",
-                        pattern: "^[A-Z]{3}$",
-                        description: "ISO 4217 currency code (e.g., USD, EUR, GBP)",
+                        format: "cuid",
+                        description: "Currency ID reference",
                         nullable: true,
                     },
                     phoneCode: {
@@ -1169,6 +1170,191 @@ const swaggerDefinition = {
                 },
                 required: ["success", "data"],
             },
+            // Currency Schemas
+            Currency: {
+                type: "object",
+                properties: {
+                    id: {
+                        type: "string",
+                        format: "cuid",
+                        description: "Unique currency identifier",
+                    },
+                    name: {
+                        type: "string",
+                        description: "Currency name (e.g., US Dollar, Euro)",
+                    },
+                    code: {
+                        type: "string",
+                        pattern: "^[A-Z]{3}$",
+                        description: "ISO 4217 currency code (e.g., USD, EUR, GBP)",
+                    },
+                    symbol: {
+                        type: "string",
+                        description: "Currency symbol (e.g., $, €, £)",
+                        nullable: true,
+                    },
+                    minorUnit: {
+                        type: "integer",
+                        minimum: 0,
+                        maximum: 6,
+                        description: "Number of decimal places (e.g., 2 for USD, 0 for JPY)",
+                    },
+                    isActive: {
+                        type: "boolean",
+                        description: "Whether the currency is active",
+                    },
+                    createdAt: {
+                        type: "string",
+                        format: "date-time",
+                        description: "Currency creation timestamp",
+                    },
+                    updatedAt: {
+                        type: "string",
+                        format: "date-time",
+                        description: "Last update timestamp",
+                    },
+                },
+                required: [
+                    "id",
+                    "name",
+                    "code",
+                    "minorUnit",
+                    "isActive",
+                    "createdAt",
+                    "updatedAt",
+                ],
+            },
+            CreateCurrencyRequest: {
+                type: "object",
+                properties: {
+                    name: {
+                        type: "string",
+                        minLength: 1,
+                        maxLength: 100,
+                        description: "Currency name (required, max 100 characters)",
+                    },
+                    code: {
+                        type: "string",
+                        pattern: "^[A-Z]{3}$",
+                        description: "ISO 4217 currency code (required, 3 uppercase letters)",
+                    },
+                    symbol: {
+                        type: "string",
+                        maxLength: 5,
+                        description: "Currency symbol (optional, max 5 characters)",
+                    },
+                    minorUnit: {
+                        type: "integer",
+                        minimum: 0,
+                        maximum: 6,
+                        description: "Number of decimal places (optional, 0-6, defaults to 2)",
+                        default: 2,
+                    },
+                    isActive: {
+                        type: "boolean",
+                        description: "Whether the currency is active (optional, defaults to true)",
+                        default: true,
+                    },
+                },
+                required: ["name", "code"],
+            },
+            UpdateCurrencyRequest: {
+                type: "object",
+                properties: {
+                    name: {
+                        type: "string",
+                        minLength: 1,
+                        maxLength: 100,
+                        description: "Currency name (max 100 characters)",
+                    },
+                    code: {
+                        type: "string",
+                        pattern: "^[A-Z]{3}$",
+                        description: "ISO 4217 currency code (3 uppercase letters)",
+                    },
+                    symbol: {
+                        type: "string",
+                        maxLength: 5,
+                        description: "Currency symbol (max 5 characters)",
+                    },
+                    minorUnit: {
+                        type: "integer",
+                        minimum: 0,
+                        maximum: 6,
+                        description: "Number of decimal places (0-6)",
+                    },
+                    isActive: {
+                        type: "boolean",
+                        description: "Whether the currency is active",
+                    },
+                },
+            },
+            CurrencyResponse: {
+                type: "object",
+                properties: {
+                    success: {
+                        type: "boolean",
+                        enum: [true],
+                    },
+                    data: {
+                        $ref: "#/components/schemas/Currency",
+                    },
+                    message: {
+                        type: "string",
+                        description: "Success message",
+                    },
+                },
+                required: ["success", "data"],
+            },
+            CurrencyListResponse: {
+                type: "object",
+                properties: {
+                    success: {
+                        type: "boolean",
+                        enum: [true],
+                    },
+                    data: {
+                        type: "object",
+                        properties: {
+                            currencies: {
+                                type: "array",
+                                items: {
+                                    $ref: "#/components/schemas/Currency",
+                                },
+                            },
+                            total: {
+                                type: "integer",
+                                description: "Total number of currencies",
+                            },
+                            page: {
+                                type: "integer",
+                                description: "Current page number",
+                            },
+                            limit: {
+                                type: "integer",
+                                description: "Number of currencies per page",
+                            },
+                            hasNext: {
+                                type: "boolean",
+                                description: "Whether there are more pages",
+                            },
+                            hasPrevious: {
+                                type: "boolean",
+                                description: "Whether there are previous pages",
+                            },
+                        },
+                        required: [
+                            "currencies",
+                            "total",
+                            "page",
+                            "limit",
+                            "hasNext",
+                            "hasPrevious",
+                        ],
+                    },
+                },
+                required: ["success", "data"],
+            },
         },
         responses: {
             UnauthorizedError: {
@@ -1297,6 +1483,10 @@ const swaggerDefinition = {
         {
             name: "Countries",
             description: "Country management with ISO codes and geographic information",
+        },
+        {
+            name: "Currencies",
+            description: "Currency management with ISO 4217 codes and formatting information",
         },
     ],
 };

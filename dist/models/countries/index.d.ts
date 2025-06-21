@@ -10,7 +10,7 @@ export declare class Country implements ICountry {
     readonly numericCode?: string | null;
     readonly continent?: string | null;
     readonly region?: string | null;
-    readonly currency?: string | null;
+    readonly currencyId?: string | null;
     readonly phoneCode?: string | null;
     readonly isActive: boolean;
     readonly createdAt: Date;

@@ -25,4 +25,5 @@ __exportStar(require("../models"), exports);
 __exportStar(require("./serviceProviders"), exports);
 __exportStar(require("./subscriptions"), exports);
 __exportStar(require("./countries"), exports);
+__exportStar(require("./currencies"), exports);
 //# sourceMappingURL=index.js.map

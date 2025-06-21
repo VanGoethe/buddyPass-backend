@@ -2,15 +2,25 @@
  * Subscription Repository Implementation
  */
 
-import { PrismaClient, Prisma } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import {
   ISubscriptionRepository,
+  ISubscriptionSlotRepository,
+  ISubscriptionRequestRepository,
   ISubscription,
+  ISubscriptionSlot,
+  ISubscriptionRequest,
   CreateSubscriptionData,
   UpdateSubscriptionData,
   SubscriptionQueryOptions,
+  CreateSubscriptionRequestData,
+  SubscriptionRequestStatus,
 } from "../../types/subscriptions";
-import { Subscription } from "../../models/subscriptions";
+import {
+  Subscription,
+  SubscriptionSlot,
+  SubscriptionRequest,
+} from "../../models/subscriptions";
 
 export class PrismaSubscriptionRepository implements ISubscriptionRepository {
   constructor(private prisma: PrismaClient) {}
@@ -18,269 +28,463 @@ export class PrismaSubscriptionRepository implements ISubscriptionRepository {
   async create(
     data: CreateSubscriptionData & { passwordHash: string }
   ): Promise<ISubscription> {
-    try {
-      const subscription = await this.prisma.subscription.create({
-        data: {
-          serviceProviderId: data.serviceProviderId,
-          countryId: data.countryId || null,
-          name: data.name.trim(),
-          email: data.email.trim().toLowerCase(),
-          passwordHash: data.passwordHash,
-          availableSlots: data.availableSlots,
-          expiresAt: data.expiresAt || null,
-          renewalInfo: (data.renewalInfo as any) || null,
-          userPrice: data.userPrice ? new Prisma.Decimal(data.userPrice) : null,
-          currency: data.currency?.toUpperCase() || null,
-          metadata: (data.metadata as any) || null,
-          isActive: data.isActive !== undefined ? data.isActive : true,
-        },
-      });
+    const subscription = await this.prisma.subscription.create({
+      data: {
+        serviceProviderId: data.serviceProviderId,
+        countryId: data.countryId,
+        name: data.name,
+        email: data.email,
+        passwordHash: data.passwordHash,
+        availableSlots: data.availableSlots,
+        expiresAt: data.expiresAt,
+        renewalInfo: data.renewalInfo as any,
+        userPrice: data.userPrice,
+        currencyId: data.currencyId,
+        metadata: data.metadata as any,
+        isActive: data.isActive ?? true,
+      },
+      include: {
+        country: true,
+      },
+    });
 
-      return Subscription.fromPrisma(subscription);
-    } catch (error: any) {
-      if (error.code === "P2002") {
-        throw new Error("A subscription with this email already exists");
-      }
-      if (error.code === "P2003") {
-        throw new Error("Service provider or country not found");
-      }
-      throw new Error(`Failed to create subscription: ${error.message}`);
-    }
+    return Subscription.fromPrisma(subscription);
   }
 
   async findById(
     id: string,
-    includeCountry = false
+    includeCountry: boolean = false
   ): Promise<ISubscription | null> {
-    try {
-      const include: any = {};
-      if (includeCountry) {
-        include.country = true;
-      }
+    const subscription = await this.prisma.subscription.findUnique({
+      where: { id },
+      include: {
+        country: includeCountry,
+      },
+    });
 
-      const subscription = await this.prisma.subscription.findUnique({
-        where: { id },
-        include,
-      });
-
-      return subscription ? Subscription.fromPrisma(subscription) : null;
-    } catch (error: any) {
-      throw new Error(`Failed to find subscription: ${error.message}`);
-    }
+    return subscription ? Subscription.fromPrisma(subscription) : null;
   }
 
   async findMany(options: SubscriptionQueryOptions = {}): Promise<{
     subscriptions: ISubscription[];
     total: number;
   }> {
-    try {
-      const {
-        page = 1,
-        limit = 10,
-        sortBy = "createdAt",
-        sortOrder = "desc",
-        search,
-        serviceProviderId,
-        isActive,
-        countryId,
-      } = options;
+    const {
+      page = 1,
+      limit = 10,
+      sortBy = "createdAt",
+      sortOrder = "desc",
+      search,
+      serviceProviderId,
+      isActive,
+      countryId,
+    } = options;
 
-      const skip = (page - 1) * limit;
-      const take = Math.min(limit, 100); // Cap at 100 items per page
+    const skip = (page - 1) * limit;
 
-      // Build where clause
-      const where: any = {};
+    const where: any = {};
 
-      if (search) {
-        where.OR = [
-          {
-            name: {
-              contains: search,
-              mode: "insensitive",
-            },
-          },
-          {
-            email: {
-              contains: search,
-              mode: "insensitive",
-            },
-          },
-        ];
-      }
-
-      if (serviceProviderId) {
-        where.serviceProviderId = serviceProviderId;
-      }
-
-      if (isActive !== undefined) {
-        where.isActive = isActive;
-      }
-
-      if (countryId) {
-        where.countryId = countryId;
-      }
-
-      // Build orderBy clause
-      const orderBy: any = {};
-      orderBy[sortBy] = sortOrder;
-
-      const [subscriptions, total] = await Promise.all([
-        this.prisma.subscription.findMany({
-          where,
-          skip,
-          take,
-          orderBy,
-          include: {
-            country: true,
-          },
-        }),
-        this.prisma.subscription.count({ where }),
-      ]);
-
-      return {
-        subscriptions: subscriptions.map((sub) => Subscription.fromPrisma(sub)),
-        total,
-      };
-    } catch (error: any) {
-      throw new Error(`Failed to fetch subscriptions: ${error.message}`);
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { email: { contains: search, mode: "insensitive" } },
+      ];
     }
+
+    if (serviceProviderId) {
+      where.serviceProviderId = serviceProviderId;
+    }
+
+    if (isActive !== undefined) {
+      where.isActive = isActive;
+    }
+
+    if (countryId) {
+      where.countryId = countryId;
+    }
+
+    const [subscriptions, total] = await Promise.all([
+      this.prisma.subscription.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder },
+        include: {
+          country: true,
+        },
+      }),
+      this.prisma.subscription.count({ where }),
+    ]);
+
+    return {
+      subscriptions: subscriptions.map((s) => Subscription.fromPrisma(s)),
+      total,
+    };
   }
 
   async update(
     id: string,
     data: UpdateSubscriptionData & { passwordHash?: string }
   ): Promise<ISubscription> {
-    try {
-      const updateData: any = {};
+    const subscription = await this.prisma.subscription.update({
+      where: { id },
+      data: {
+        countryId: data.countryId,
+        name: data.name,
+        email: data.email,
+        passwordHash: data.passwordHash,
+        availableSlots: data.availableSlots,
+        expiresAt: data.expiresAt,
+        renewalInfo: data.renewalInfo as any,
+        userPrice: data.userPrice,
+        currencyId: data.currencyId,
+        metadata: data.metadata as any,
+        isActive: data.isActive,
+      },
+      include: {
+        country: true,
+      },
+    });
 
-      if (data.name !== undefined) {
-        updateData.name = data.name.trim();
-      }
-
-      if (data.email !== undefined) {
-        updateData.email = data.email.trim().toLowerCase();
-      }
-
-      if (data.passwordHash !== undefined) {
-        updateData.passwordHash = data.passwordHash;
-      }
-
-      if (data.availableSlots !== undefined) {
-        updateData.availableSlots = data.availableSlots;
-      }
-
-      if (data.countryId !== undefined) {
-        updateData.countryId = data.countryId || null;
-      }
-
-      if (data.expiresAt !== undefined) {
-        updateData.expiresAt = data.expiresAt || null;
-      }
-
-      if (data.renewalInfo !== undefined) {
-        updateData.renewalInfo = (data.renewalInfo as any) || null;
-      }
-
-      if (data.userPrice !== undefined) {
-        updateData.userPrice = data.userPrice
-          ? new Prisma.Decimal(data.userPrice)
-          : null;
-      }
-
-      if (data.currency !== undefined) {
-        updateData.currency = data.currency?.toUpperCase() || null;
-      }
-
-      if (data.metadata !== undefined) {
-        updateData.metadata = (data.metadata as any) || null;
-      }
-
-      if (data.isActive !== undefined) {
-        updateData.isActive = data.isActive;
-      }
-
-      const subscription = await this.prisma.subscription.update({
-        where: { id },
-        data: updateData,
-      });
-
-      return Subscription.fromPrisma(subscription);
-    } catch (error: any) {
-      if (error.code === "P2025") {
-        throw new Error("Subscription not found");
-      }
-      if (error.code === "P2002") {
-        throw new Error("A subscription with this email already exists");
-      }
-      if (error.code === "P2003") {
-        throw new Error("Country not found");
-      }
-      throw new Error(`Failed to update subscription: ${error.message}`);
-    }
+    return Subscription.fromPrisma(subscription);
   }
 
   async delete(id: string): Promise<void> {
-    try {
-      await this.prisma.subscription.delete({
-        where: { id },
-      });
-    } catch (error: any) {
-      if (error.code === "P2025") {
-        throw new Error("Subscription not found");
-      }
-      throw new Error(`Failed to delete subscription: ${error.message}`);
-    }
+    await this.prisma.subscription.delete({
+      where: { id },
+    });
   }
 
   async existsByEmail(email: string, excludeId?: string): Promise<boolean> {
-    try {
-      const where: any = {
-        email: {
-          equals: email.trim().toLowerCase(),
-          mode: "insensitive",
-        },
-      };
-
-      if (excludeId) {
-        where.id = {
-          not: excludeId,
-        };
-      }
-
-      const count = await this.prisma.subscription.count({ where });
-      return count > 0;
-    } catch (error: any) {
-      throw new Error(`Failed to check subscription email: ${error.message}`);
+    const where: any = { email };
+    if (excludeId) {
+      where.id = { not: excludeId };
     }
+
+    const count = await this.prisma.subscription.count({ where });
+    return count > 0;
   }
 
   async findByServiceProviderId(
     serviceProviderId: string
   ): Promise<ISubscription[]> {
-    try {
-      const subscriptions = await this.prisma.subscription.findMany({
-        where: { serviceProviderId },
-        orderBy: { createdAt: "desc" },
-      });
+    const subscriptions = await this.prisma.subscription.findMany({
+      where: { serviceProviderId },
+      include: {
+        country: true,
+      },
+    });
 
-      return subscriptions.map((sub) => Subscription.fromPrisma(sub));
-    } catch (error: any) {
-      throw new Error(
-        `Failed to find subscriptions by service provider: ${error.message}`
-      );
-    }
+    return subscriptions.map((s) => Subscription.fromPrisma(s));
   }
 
   async countByServiceProviderId(serviceProviderId: string): Promise<number> {
-    try {
-      return await this.prisma.subscription.count({
-        where: { serviceProviderId },
-      });
-    } catch (error: any) {
-      throw new Error(
-        `Failed to count subscriptions by service provider: ${error.message}`
-      );
+    return this.prisma.subscription.count({
+      where: { serviceProviderId },
+    });
+  }
+
+  async findAvailableByServiceProviderId(
+    serviceProviderId: string,
+    countryId?: string
+  ): Promise<ISubscription[]> {
+    const where: any = {
+      serviceProviderId,
+      availableSlots: { gt: 0 },
+      isActive: true,
+    };
+
+    if (countryId) {
+      where.countryId = countryId;
     }
+
+    const subscriptions = await this.prisma.subscription.findMany({
+      where,
+      orderBy: [
+        { availableSlots: "desc" }, // Fill subscriptions with fewer available slots first
+        { createdAt: "asc" }, // Then oldest first
+      ],
+      include: {
+        country: true,
+      },
+    });
+
+    return subscriptions.map((s) => Subscription.fromPrisma(s));
+  }
+
+  async decrementAvailableSlots(
+    subscriptionId: string
+  ): Promise<ISubscription> {
+    const subscription = await this.prisma.subscription.update({
+      where: { id: subscriptionId },
+      data: {
+        availableSlots: { decrement: 1 },
+      },
+      include: {
+        country: true,
+      },
+    });
+
+    return Subscription.fromPrisma(subscription);
+  }
+}
+
+export class PrismaSubscriptionSlotRepository
+  implements ISubscriptionSlotRepository
+{
+  constructor(private prisma: PrismaClient) {}
+
+  async create(data: {
+    userId: string;
+    subscriptionId: string;
+  }): Promise<ISubscriptionSlot> {
+    const slot = await this.prisma.subscriptionSlot.create({
+      data: {
+        userId: data.userId,
+        subscriptionId: data.subscriptionId,
+      },
+      include: {
+        user: true,
+        subscription: {
+          include: {
+            country: true,
+          },
+        },
+      },
+    });
+
+    return SubscriptionSlot.fromPrisma(slot);
+  }
+
+  async findByUserId(userId: string): Promise<ISubscriptionSlot[]> {
+    const slots = await this.prisma.subscriptionSlot.findMany({
+      where: { userId, isActive: true },
+      include: {
+        user: true,
+        subscription: {
+          include: {
+            country: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return slots.map((slot) => SubscriptionSlot.fromPrisma(slot));
+  }
+
+  async findBySubscriptionId(
+    subscriptionId: string
+  ): Promise<ISubscriptionSlot[]> {
+    const slots = await this.prisma.subscriptionSlot.findMany({
+      where: { subscriptionId, isActive: true },
+      include: {
+        user: true,
+        subscription: {
+          include: {
+            country: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return slots.map((slot) => SubscriptionSlot.fromPrisma(slot));
+  }
+
+  async findByUserAndSubscription(
+    userId: string,
+    subscriptionId: string
+  ): Promise<ISubscriptionSlot | null> {
+    const slot = await this.prisma.subscriptionSlot.findFirst({
+      where: { userId, subscriptionId, isActive: true },
+      include: {
+        user: true,
+        subscription: {
+          include: {
+            country: true,
+          },
+        },
+      },
+    });
+
+    return slot ? SubscriptionSlot.fromPrisma(slot) : null;
+  }
+
+  async findByUserAndServiceProvider(
+    userId: string,
+    serviceProviderId: string
+  ): Promise<ISubscriptionSlot | null> {
+    const slot = await this.prisma.subscriptionSlot.findFirst({
+      where: {
+        userId,
+        isActive: true,
+        subscription: {
+          serviceProviderId,
+        },
+      },
+      include: {
+        user: true,
+        subscription: {
+          include: {
+            country: true,
+          },
+        },
+      },
+    });
+
+    return slot ? SubscriptionSlot.fromPrisma(slot) : null;
+  }
+
+  async countBySubscriptionId(subscriptionId: string): Promise<number> {
+    return this.prisma.subscriptionSlot.count({
+      where: { subscriptionId, isActive: true },
+    });
+  }
+
+  async delete(id: string): Promise<void> {
+    await this.prisma.subscriptionSlot.delete({
+      where: { id },
+    });
+  }
+
+  async deleteByUserAndSubscription(
+    userId: string,
+    subscriptionId: string
+  ): Promise<void> {
+    await this.prisma.subscriptionSlot.deleteMany({
+      where: { userId, subscriptionId },
+    });
+  }
+}
+
+export class PrismaSubscriptionRequestRepository
+  implements ISubscriptionRequestRepository
+{
+  constructor(private prisma: PrismaClient) {}
+
+  async create(
+    data: CreateSubscriptionRequestData & { userId: string }
+  ): Promise<ISubscriptionRequest> {
+    const request = await this.prisma.subscriptionRequest.create({
+      data: {
+        userId: data.userId,
+        serviceProviderId: data.serviceProviderId,
+        countryId: data.countryId,
+      },
+      include: {
+        user: true,
+        serviceProvider: true,
+        country: true,
+      },
+    });
+
+    return SubscriptionRequest.fromPrisma(request);
+  }
+
+  async findById(id: string): Promise<ISubscriptionRequest | null> {
+    const request = await this.prisma.subscriptionRequest.findUnique({
+      where: { id },
+      include: {
+        user: true,
+        serviceProvider: true,
+        country: true,
+      },
+    });
+
+    return request ? SubscriptionRequest.fromPrisma(request) : null;
+  }
+
+  async findByUserId(userId: string): Promise<ISubscriptionRequest[]> {
+    const requests = await this.prisma.subscriptionRequest.findMany({
+      where: { userId },
+      include: {
+        user: true,
+        serviceProvider: true,
+        country: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return requests.map((request) => SubscriptionRequest.fromPrisma(request));
+  }
+
+  async findPendingRequests(): Promise<ISubscriptionRequest[]> {
+    const requests = await this.prisma.subscriptionRequest.findMany({
+      where: { status: SubscriptionRequestStatus.PENDING },
+      include: {
+        user: true,
+        serviceProvider: true,
+        country: true,
+      },
+      orderBy: { createdAt: "asc" }, // FIFO processing
+    });
+
+    return requests.map((request) => SubscriptionRequest.fromPrisma(request));
+  }
+
+  async findPendingByServiceProvider(
+    serviceProviderId: string
+  ): Promise<ISubscriptionRequest[]> {
+    const requests = await this.prisma.subscriptionRequest.findMany({
+      where: {
+        serviceProviderId,
+        status: SubscriptionRequestStatus.PENDING,
+      },
+      include: {
+        user: true,
+        serviceProvider: true,
+        country: true,
+      },
+      orderBy: { createdAt: "asc" }, // FIFO processing
+    });
+
+    return requests.map((request) => SubscriptionRequest.fromPrisma(request));
+  }
+
+  async updateStatus(
+    id: string,
+    status: SubscriptionRequestStatus
+  ): Promise<ISubscriptionRequest> {
+    const request = await this.prisma.subscriptionRequest.update({
+      where: { id },
+      data: { status, processedAt: new Date() },
+      include: {
+        user: true,
+        serviceProvider: true,
+        country: true,
+      },
+    });
+
+    return SubscriptionRequest.fromPrisma(request);
+  }
+
+  async update(
+    id: string,
+    data: {
+      status?: SubscriptionRequestStatus;
+      assignedSlotId?: string | null;
+      processedAt?: Date;
+      metadata?: any;
+    }
+  ): Promise<ISubscriptionRequest> {
+    const request = await this.prisma.subscriptionRequest.update({
+      where: { id },
+      data,
+      include: {
+        user: true,
+        serviceProvider: true,
+        country: true,
+      },
+    });
+
+    return SubscriptionRequest.fromPrisma(request);
+  }
+
+  async delete(id: string): Promise<void> {
+    await this.prisma.subscriptionRequest.delete({
+      where: { id },
+    });
   }
 }
 

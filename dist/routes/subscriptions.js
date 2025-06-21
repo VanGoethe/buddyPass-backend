@@ -7,8 +7,167 @@ const express_1 = require("express");
 const container_1 = require("../container");
 const subscriptions_1 = require("../controllers/subscriptions");
 const auth_1 = require("../middleware/auth");
+const express_validator_1 = require("express-validator");
 const router = (0, express_1.Router)();
 const subscriptionController = container_1.container.getSubscriptionController();
+/**
+ * @swagger
+ * /subscriptions/request:
+ *   post:
+ *     summary: Request a subscription slot
+ *     description: |
+ *       Request an available slot from a service provider. The system will automatically:
+ *       - Find the best available subscription with open slots
+ *       - Assign the user to that slot immediately if available
+ *       - Create a pending request if all slots are full
+ *
+ *       The algorithm prioritizes filling existing subscriptions completely before moving to the next one.
+ *     tags: [Subscriptions]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - serviceProviderId
+ *             properties:
+ *               serviceProviderId:
+ *                 type: string
+ *                 format: cuid
+ *                 description: The service provider to request a slot from
+ *                 example: "cm4sp789xyz012ghi"
+ *               countryId:
+ *                 type: string
+ *                 format: cuid
+ *                 description: Optional country preference for the subscription
+ *                 example: "cm4c123abc456def789"
+ *             example:
+ *               serviceProviderId: "cm4sp789xyz012ghi"
+ *               countryId: "cm4c123abc456def789"
+ *     responses:
+ *       200:
+ *         description: Slot request processed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         request:
+ *                           $ref: '#/components/schemas/SubscriptionRequest'
+ *             examples:
+ *               assigned:
+ *                 summary: Slot successfully assigned
+ *                 value:
+ *                   success: true
+ *                   data:
+ *                     request:
+ *                       id: "cm4req123abc456def"
+ *                       userId: "cm4u123abc456def789"
+ *                       serviceProviderId: "cm4sp789xyz012ghi"
+ *                       countryId: "cm4c123abc456def789"
+ *                       status: "ASSIGNED"
+ *                       assignedSlotId: "cm4slot123abc456"
+ *                       requestedAt: "2025-06-20T10:30:00.000Z"
+ *                       processedAt: "2025-06-20T10:30:00.123Z"
+ *                       createdAt: "2025-06-20T10:30:00.000Z"
+ *                       updatedAt: "2025-06-20T10:30:00.123Z"
+ *                   message: "Slot successfully assigned! You now have access to this subscription."
+ *               pending:
+ *                 summary: Request is pending (no slots available)
+ *                 value:
+ *                   success: true
+ *                   data:
+ *                     request:
+ *                       id: "cm4req123abc456def"
+ *                       userId: "cm4u123abc456def789"
+ *                       serviceProviderId: "cm4sp789xyz012ghi"
+ *                       countryId: "cm4c123abc456def789"
+ *                       status: "PENDING"
+ *                       assignedSlotId: null
+ *                       requestedAt: "2025-06-20T10:30:00.000Z"
+ *                       processedAt: null
+ *                       createdAt: "2025-06-20T10:30:00.000Z"
+ *                       updatedAt: "2025-06-20T10:30:00.000Z"
+ *                   message: "All subscription slots are currently full, but new subscriptions will be created shortly. Please check back in a few minutes."
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         description: Service provider or country not found
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.post("/request", auth_1.authenticateJWT, [
+    (0, express_validator_1.body)("serviceProviderId")
+        .notEmpty()
+        .withMessage("Service provider ID is required")
+        .isString()
+        .withMessage("Service provider ID must be a string"),
+    (0, express_validator_1.body)("countryId")
+        .optional()
+        .isString()
+        .withMessage("Country ID must be a string"),
+], subscriptionController.requestSubscriptionSlot.bind(subscriptionController));
+/**
+ * @swagger
+ * /subscriptions/my-slots:
+ *   get:
+ *     summary: Get user's assigned subscription slots
+ *     description: Retrieve all subscription slots assigned to the authenticated user
+ *     tags: [Subscriptions]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: User's subscription slots retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         slots:
+ *                           type: array
+ *                           items:
+ *                             $ref: '#/components/schemas/SubscriptionSlot'
+ *             example:
+ *               success: true
+ *               data:
+ *                 slots:
+ *                   - id: "cm4slot123abc456"
+ *                     userId: "cm4u123abc456def789"
+ *                     subscriptionId: "cm4sub123abc456def"
+ *                     assignedAt: "2025-06-20T10:30:00.000Z"
+ *                     isActive: true
+ *                     createdAt: "2025-06-20T10:30:00.000Z"
+ *                     updatedAt: "2025-06-20T10:30:00.000Z"
+ *                     subscription:
+ *                       id: "cm4sub123abc456def"
+ *                       name: "Netflix Premium Family"
+ *                       email: "netflix@example.com"
+ *                       serviceProviderId: "cm4sp789xyz012ghi"
+ *                       userPrice: "4.99"
+ *                       currencyId: "cm2ksxp8t0000uvcn4kzq3mhc"
+ *                       expiresAt: "2025-12-31T23:59:59.000Z"
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.get("/my-slots", auth_1.authenticateJWT, subscriptionController.getUserSubscriptionSlots.bind(subscriptionController));
 /**
  * @swagger
  * /subscriptions:
@@ -122,7 +281,7 @@ const subscriptionController = container_1.container.getSubscriptionController()
  *                       code: "US"
  *                       alpha3: "USA"
  *                     userPrice: 4.99
- *                     currency: "USD"
+ *                     currencyId: "cm2ksxp8t0000uvcn4kzq3mhc"
  *                     isActive: true
  *                     createdAt: "2025-06-04T20:50:09.000Z"
  *                     updatedAt: "2025-06-04T20:50:09.000Z"
@@ -191,7 +350,7 @@ router.get("/", auth_1.authenticateJWT, subscriptions_1.SubscriptionController.g
  *                     alpha3: "USA"
  *                   expiresAt: "2025-12-31T23:59:59.000Z"
  *                   userPrice: 4.99
- *                   currency: "USD"
+ *                   currencyId: "cm2ksxp8t0000uvcn4kzq3mhc"
  *                   isActive: true
  *                   createdAt: "2025-06-04T20:50:09.000Z"
  *                   updatedAt: "2025-06-04T20:50:09.000Z"
@@ -233,7 +392,7 @@ router.get("/:id", auth_1.authenticateJWT, subscriptions_1.SubscriptionControlle
  *             countryId: "cm4c123abc456def789"
  *             expiresAt: "2025-12-31T23:59:59.000Z"
  *             userPrice: 4.99
- *             currency: "USD"
+ *             currencyId: "cm2ksxp8t0000uvcn4kzq3mhc"
  *     responses:
  *       201:
  *         description: Subscription created successfully
@@ -266,7 +425,7 @@ router.get("/:id", auth_1.authenticateJWT, subscriptions_1.SubscriptionControlle
  *                     alpha3: "USA"
  *                   expiresAt: "2025-12-31T23:59:59.000Z"
  *                   userPrice: 4.99
- *                   currency: "USD"
+ *                   currencyId: "cm2ksxp8t0000uvcn4kzq3mhc"
  *                   isActive: true
  *                   createdAt: "2025-06-04T20:50:09.000Z"
  *                   updatedAt: "2025-06-04T20:50:09.000Z"
@@ -340,7 +499,7 @@ router.post("/", auth_1.authenticateJWT, subscriptions_1.SubscriptionController.
  *                     code: "CA"
  *                     alpha3: "CAN"
  *                   userPrice: 5.99
- *                   currency: "USD"
+ *                   currencyId: "cm2ksxp8t0000uvcn4kzq3mhc"
  *                   isActive: true
  *                   updatedAt: "2025-06-04T21:00:09.000Z"
  *               message: "Subscription updated successfully"
@@ -493,7 +652,7 @@ router.delete("/:id", auth_1.authenticateJWT, subscriptions_1.SubscriptionContro
  *                       code: "US"
  *                       alpha3: "USA"
  *                     userPrice: 4.99
- *                     currency: "USD"
+ *                     currencyId: "cm2ksxp8t0000uvcn4kzq3mhc"
  *                     isActive: true
  *                     createdAt: "2025-06-04T20:50:09.000Z"
  *                 serviceProvider:

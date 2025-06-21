@@ -17,7 +17,7 @@ export class Country implements ICountry {
   public readonly numericCode?: string | null;
   public readonly continent?: string | null;
   public readonly region?: string | null;
-  public readonly currency?: string | null;
+  public readonly currencyId?: string | null;
   public readonly phoneCode?: string | null;
   public readonly isActive: boolean;
   public readonly createdAt: Date;
@@ -31,7 +31,7 @@ export class Country implements ICountry {
     this.numericCode = data.numericCode;
     this.continent = data.continent;
     this.region = data.region;
-    this.currency = data.currency;
+    this.currencyId = data.currencyId;
     this.phoneCode = data.phoneCode;
     this.isActive = data.isActive;
     this.createdAt = data.createdAt;
@@ -93,13 +93,7 @@ export class Country implements ICountry {
       }
     }
 
-    // Validate currency code if provided
-    if (data.currency) {
-      const currencyRegex = /^[A-Z]{3}$/;
-      if (!currencyRegex.test(data.currency.trim().toUpperCase())) {
-        throw new Error("Currency code must be a valid 3-letter ISO 4217 code");
-      }
-    }
+    // Currency validation is handled by foreign key constraints in the database
   }
 
   /**
@@ -158,12 +152,7 @@ export class Country implements ICountry {
       }
     }
 
-    if (data.currency !== undefined && data.currency) {
-      const currencyRegex = /^[A-Z]{3}$/;
-      if (!currencyRegex.test(data.currency.trim().toUpperCase())) {
-        throw new Error("Currency code must be a valid 3-letter ISO 4217 code");
-      }
-    }
+    // Currency validation is handled by foreign key constraints in the database
   }
 
   /**
@@ -200,10 +189,8 @@ export class Country implements ICountry {
       normalized.region = data.region ? data.region.trim() : null;
     }
 
-    if (data.currency !== undefined) {
-      normalized.currency = data.currency
-        ? data.currency.trim().toUpperCase()
-        : null;
+    if (data.currencyId !== undefined) {
+      normalized.currencyId = data.currencyId ? data.currencyId.trim() : null;
     }
 
     if (data.phoneCode !== undefined) {
@@ -229,7 +216,7 @@ export class Country implements ICountry {
       numericCode: this.numericCode,
       continent: this.continent,
       region: this.region,
-      currency: this.currency,
+      currencyId: this.currencyId,
       phoneCode: this.phoneCode,
       isActive: this.isActive,
       createdAt: this.createdAt.toISOString(),
@@ -249,7 +236,7 @@ export class Country implements ICountry {
       numericCode: data.numericCode,
       continent: data.continent,
       region: data.region,
-      currency: data.currency,
+      currencyId: data.currencyId,
       phoneCode: data.phoneCode,
       isActive: data.isActive,
       createdAt: data.createdAt,

@@ -12,3 +12,4 @@ export * from "../models";
 export * from "./serviceProviders";
 export * from "./subscriptions";
 export * from "./countries";
+export * from "./currencies";

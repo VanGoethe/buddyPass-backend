@@ -38,7 +38,7 @@ class SubscriptionController {
                 expiresAt: expiresAt ? new Date(expiresAt) : undefined,
                 renewalInfo,
                 userPrice,
-                currency,
+                currencyId: currency,
                 metadata,
                 isActive,
             });
@@ -194,7 +194,7 @@ class SubscriptionController {
                 expiresAt: expiresAt ? new Date(expiresAt) : undefined,
                 renewalInfo,
                 userPrice,
-                currency,
+                currencyId: currency,
                 metadata,
                 isActive,
             });
@@ -322,6 +322,126 @@ class SubscriptionController {
                     },
                 });
             }
+        }
+    }
+    /**
+     * Request a subscription slot
+     */
+    async requestSubscriptionSlot(req, res) {
+        try {
+            const errors = (0, express_validator_1.validationResult)(req);
+            if (!errors.isEmpty()) {
+                res.status(400).json({
+                    success: false,
+                    error: {
+                        code: "VALIDATION_ERROR",
+                        message: "Invalid request data",
+                        details: errors.array(),
+                    },
+                });
+                return;
+            }
+            const userId = req.user?.id;
+            if (!userId) {
+                res.status(401).json({
+                    success: false,
+                    error: {
+                        code: "UNAUTHORIZED",
+                        message: "User authentication required",
+                    },
+                });
+                return;
+            }
+            const { serviceProviderId, countryId } = req.body;
+            const request = await this.subscriptionService.requestSubscriptionSlot(userId, { serviceProviderId, countryId });
+            const statusCode = request.status === "ASSIGNED" ? 200 : 200;
+            const message = request.status === "ASSIGNED"
+                ? "Slot successfully assigned! You now have access to this subscription."
+                : "All subscription slots are currently full, but new subscriptions will be created shortly. Please check back in a few minutes.";
+            res.status(statusCode).json({
+                success: true,
+                data: {
+                    request,
+                },
+                message,
+            });
+        }
+        catch (error) {
+            console.error("Error requesting subscription slot:", error);
+            if (error.message.includes("not found")) {
+                res.status(404).json({
+                    success: false,
+                    error: {
+                        code: "NOT_FOUND",
+                        message: error.message,
+                    },
+                });
+                return;
+            }
+            if (error.message.includes("already have") ||
+                error.message.includes("pending request")) {
+                res.status(400).json({
+                    success: false,
+                    error: {
+                        code: "DUPLICATE_REQUEST",
+                        message: error.message,
+                    },
+                });
+                return;
+            }
+            if (error.message.includes("not support")) {
+                res.status(400).json({
+                    success: false,
+                    error: {
+                        code: "NOT_SUPPORTED",
+                        message: error.message,
+                    },
+                });
+                return;
+            }
+            res.status(500).json({
+                success: false,
+                error: {
+                    code: "INTERNAL_SERVER_ERROR",
+                    message: error.message || "Failed to request subscription slot",
+                },
+            });
+        }
+    }
+    /**
+     * Get user's subscription slots
+     */
+    async getUserSubscriptionSlots(req, res) {
+        try {
+            const userId = req.user?.id;
+            if (!userId) {
+                res.status(401).json({
+                    success: false,
+                    error: {
+                        code: "UNAUTHORIZED",
+                        message: "User authentication required",
+                    },
+                });
+                return;
+            }
+            const slots = await this.subscriptionService.getUserSubscriptionSlots(userId);
+            res.status(200).json({
+                success: true,
+                data: {
+                    slots,
+                },
+                message: "User subscription slots retrieved successfully",
+            });
+        }
+        catch (error) {
+            console.error("Error fetching user subscription slots:", error);
+            res.status(500).json({
+                success: false,
+                error: {
+                    code: "INTERNAL_SERVER_ERROR",
+                    message: error.message || "Failed to fetch user subscription slots",
+                },
+            });
         }
     }
 }

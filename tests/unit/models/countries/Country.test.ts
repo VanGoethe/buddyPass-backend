@@ -17,7 +17,7 @@ describe("Country Model", () => {
     numericCode: "840",
     continent: "North America",
     region: "Northern America",
-    currency: "USD",
+    currencyId: "cmc6lpjqw00009utlsvz3enyx",
     phoneCode: "+1",
     isActive: true,
     createdAt: new Date("2025-06-04T22:09:04.000Z"),
@@ -35,7 +35,7 @@ describe("Country Model", () => {
       expect(country.numericCode).toBe(validCountryData.numericCode);
       expect(country.continent).toBe(validCountryData.continent);
       expect(country.region).toBe(validCountryData.region);
-      expect(country.currency).toBe(validCountryData.currency);
+      expect(country.currencyId).toBe(validCountryData.currencyId);
       expect(country.phoneCode).toBe(validCountryData.phoneCode);
       expect(country.isActive).toBe(validCountryData.isActive);
       expect(country.createdAt).toBe(validCountryData.createdAt);
@@ -48,7 +48,7 @@ describe("Country Model", () => {
         numericCode: null,
         continent: null,
         region: null,
-        currency: null,
+        currencyId: null,
         phoneCode: null,
       };
 
@@ -57,7 +57,7 @@ describe("Country Model", () => {
       expect(country.numericCode).toBeNull();
       expect(country.continent).toBeNull();
       expect(country.region).toBeNull();
-      expect(country.currency).toBeNull();
+      expect(country.currencyId).toBeNull();
       expect(country.phoneCode).toBeNull();
     });
   });
@@ -70,7 +70,7 @@ describe("Country Model", () => {
       numericCode: "840",
       continent: "North America",
       region: "Northern America",
-      currency: "USD",
+      currencyId: "cmc6lpjqw00009utlsvz3enyx",
       phoneCode: "+1",
       isActive: true,
     };
@@ -135,19 +135,14 @@ describe("Country Model", () => {
       );
     });
 
-    it("should throw error for invalid currency format", () => {
-      const invalidData = { ...validCreateData, currency: "US" };
-      expect(() => Country.validateCreateData(invalidData)).toThrow(
-        "Currency code must be a valid 3-letter ISO 4217 code"
-      );
-    });
+    // Currency validation is now handled by database foreign key constraints
 
     it("should accept valid optional fields", () => {
       const validDataWithOptionals = {
         ...validCreateData,
         numericCode: "840",
         phoneCode: "+1",
-        currency: "USD",
+        currencyId: "cmc6lpjqw00009utlsvz3enyx",
       };
       expect(() =>
         Country.validateCreateData(validDataWithOptionals)
@@ -204,7 +199,7 @@ describe("Country Model", () => {
         numericCode: "  840  ",
         continent: "  North America  ",
         region: "  Northern America  ",
-        currency: "usd",
+        currencyId: "usd",
         phoneCode: "  +1  ",
         isActive: true,
       };
@@ -217,7 +212,7 @@ describe("Country Model", () => {
       expect(normalized.numericCode).toBe("840");
       expect(normalized.continent).toBe("North America");
       expect(normalized.region).toBe("Northern America");
-      expect(normalized.currency).toBe("USD");
+      expect(normalized.currencyId).toBe("usd");
       expect(normalized.phoneCode).toBe("+1");
       expect(normalized.isActive).toBe(true);
     });
@@ -230,7 +225,7 @@ describe("Country Model", () => {
         numericCode: "",
         continent: "",
         region: "",
-        currency: "",
+        currencyId: "",
         phoneCode: "",
       };
 
@@ -239,7 +234,7 @@ describe("Country Model", () => {
       expect(normalized.numericCode).toBeNull();
       expect(normalized.continent).toBeNull();
       expect(normalized.region).toBeNull();
-      expect(normalized.currency).toBeNull();
+      expect(normalized.currencyId).toBeNull();
       expect(normalized.phoneCode).toBeNull();
     });
   });
@@ -256,7 +251,7 @@ describe("Country Model", () => {
       expect(response.numericCode).toBe(validCountryData.numericCode);
       expect(response.continent).toBe(validCountryData.continent);
       expect(response.region).toBe(validCountryData.region);
-      expect(response.currency).toBe(validCountryData.currency);
+      expect(response.currencyId).toBe(validCountryData.currencyId);
       expect(response.phoneCode).toBe(validCountryData.phoneCode);
       expect(response.isActive).toBe(validCountryData.isActive);
       expect(response.createdAt).toBe("2025-06-04T22:09:04.000Z");
@@ -274,7 +269,7 @@ describe("Country Model", () => {
         numericCode: "840",
         continent: "North America",
         region: "Northern America",
-        currency: "USD",
+        currencyId: "cmc6lpjqw00009utlsvz3enyx",
         phoneCode: "+1",
         isActive: true,
         createdAt: new Date("2025-06-04T22:09:04.000Z"),

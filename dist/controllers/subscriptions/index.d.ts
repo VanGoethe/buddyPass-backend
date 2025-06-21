@@ -54,6 +54,14 @@ export declare class SubscriptionController {
      * Get subscriptions by service provider
      */
     getSubscriptionsByServiceProvider(req: Request, res: Response): Promise<void>;
+    /**
+     * Request a subscription slot
+     */
+    requestSubscriptionSlot(req: Request, res: Response): Promise<void>;
+    /**
+     * Get user's subscription slots
+     */
+    getUserSubscriptionSlots(req: Request, res: Response): Promise<void>;
 }
 /**
  * Factory function to create Subscription controller
