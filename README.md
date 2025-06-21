@@ -28,7 +28,7 @@ BuddyPass Backend is a sophisticated **Node.js/TypeScript** application designed
 - **📊 Repository Pattern**: Abstract data access layer with transaction management
 - **🛡️ Security-First Design**: JWT-based authentication, RBAC, and comprehensive input validation
 - **📝 OpenAPI-First**: Complete API specification with Swagger documentation
-- **🧪 Test-Driven Development**: 379 tests with automated cleanup utilities
+- **🧪 Test-Driven Development**: Comprehensive test coverage with automated cleanup utilities
 
 ## 🚀 Key Features & Capabilities
 
