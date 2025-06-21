@@ -125,8 +125,8 @@ describe("ServiceProvider E2E Tests", () => {
           },
           pricing: {
             tiers: [
-              { name: "Basic", price: 8.99, currency: "USD" },
-              { name: "Premium", price: 15.99, currency: "USD" },
+              { name: "Basic", price: 8.99, currencyId: "cmc6lpjqw00009utlsvz3enyx" },
+              { name: "Premium", price: 15.99, currencyId: "cmc6lpjqw00009utlsvz3enyx" },
             ],
           },
           regions: {

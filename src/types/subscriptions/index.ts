@@ -4,6 +4,7 @@
 
 import { Prisma } from "@prisma/client";
 import { ICountry } from "../countries";
+import { User } from "../users";
 
 // Entity Interface
 export interface ISubscription {
@@ -17,12 +18,50 @@ export interface ISubscription {
   expiresAt?: Date | null;
   renewalInfo?: Prisma.JsonValue | null;
   userPrice?: Prisma.Decimal | null;
-  currency?: string | null;
+  currencyId?: string | null;
   metadata?: Prisma.JsonValue | null;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
   country?: ICountry | null;
+}
+
+// Subscription Slot Entity Interface
+export interface ISubscriptionSlot {
+  id: string;
+  userId: string;
+  subscriptionId: string;
+  assignedAt: Date;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  user?: User;
+  subscription?: ISubscription;
+}
+
+// Subscription Request Entity Interface
+export interface ISubscriptionRequest {
+  id: string;
+  userId: string;
+  serviceProviderId: string;
+  countryId?: string | null;
+  status: SubscriptionRequestStatus;
+  assignedSlotId?: string | null;
+  requestedAt: Date;
+  processedAt?: Date | null;
+  metadata?: Prisma.JsonValue | null;
+  createdAt: Date;
+  updatedAt: Date;
+  user?: User;
+  country?: ICountry | null;
+}
+
+// Subscription Request Status Enum
+export enum SubscriptionRequestStatus {
+  PENDING = "PENDING",
+  ASSIGNED = "ASSIGNED",
+  REJECTED = "REJECTED",
+  CANCELLED = "CANCELLED",
 }
 
 // DTOs for API Requests
@@ -36,7 +75,7 @@ export interface CreateSubscriptionData {
   expiresAt?: Date;
   renewalInfo?: Prisma.JsonValue;
   userPrice?: number;
-  currency?: string;
+  currencyId?: string;
   metadata?: Prisma.JsonValue;
   isActive?: boolean;
 }
@@ -50,9 +89,60 @@ export interface UpdateSubscriptionData {
   expiresAt?: Date;
   renewalInfo?: Prisma.JsonValue;
   userPrice?: number;
-  currency?: string;
+  currencyId?: string;
   metadata?: Prisma.JsonValue;
   isActive?: boolean;
+}
+
+// Subscription Request DTOs
+export interface CreateSubscriptionRequestData {
+  serviceProviderId: string;
+  countryId?: string;
+}
+
+export interface SubscriptionRequestResponse {
+  id: string;
+  userId: string;
+  serviceProviderId: string;
+  countryId?: string | null;
+  status: SubscriptionRequestStatus;
+  assignedSlotId?: string | null;
+  requestedAt: string;
+  processedAt?: string | null;
+  metadata?: Prisma.JsonValue | null;
+  createdAt: string;
+  updatedAt: string;
+  serviceProvider?: {
+    id: string;
+    name: string;
+    description?: string | null;
+  };
+  country?: {
+    id: string;
+    name: string;
+    code: string;
+    alpha3: string;
+  } | null;
+}
+
+// Subscription Slot DTOs
+export interface SubscriptionSlotResponse {
+  id: string;
+  userId: string;
+  subscriptionId: string;
+  assignedAt: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  subscription?: {
+    id: string;
+    name: string;
+    email: string;
+    serviceProviderId: string;
+    userPrice?: string | null;
+    currencyId?: string | null;
+    expiresAt?: string | null;
+  };
 }
 
 // DTOs for API Responses
@@ -72,7 +162,7 @@ export interface SubscriptionResponse {
   expiresAt?: string | null;
   renewalInfo?: Prisma.JsonValue | null;
   userPrice?: string | null;
-  currency?: string | null;
+  currencyId?: string | null;
   metadata?: Prisma.JsonValue | null;
   isActive: boolean;
   createdAt: string;
@@ -124,6 +214,62 @@ export interface ISubscriptionRepository {
   existsByEmail(email: string, excludeId?: string): Promise<boolean>;
   findByServiceProviderId(serviceProviderId: string): Promise<ISubscription[]>;
   countByServiceProviderId(serviceProviderId: string): Promise<number>;
+  findAvailableByServiceProviderId(
+    serviceProviderId: string,
+    countryId?: string
+  ): Promise<ISubscription[]>;
+  decrementAvailableSlots(subscriptionId: string): Promise<ISubscription>;
+}
+
+// Subscription Slot Repository Interface
+export interface ISubscriptionSlotRepository {
+  create(data: {
+    userId: string;
+    subscriptionId: string;
+  }): Promise<ISubscriptionSlot>;
+  findByUserId(userId: string): Promise<ISubscriptionSlot[]>;
+  findBySubscriptionId(subscriptionId: string): Promise<ISubscriptionSlot[]>;
+  findByUserAndSubscription(
+    userId: string,
+    subscriptionId: string
+  ): Promise<ISubscriptionSlot | null>;
+  findByUserAndServiceProvider(
+    userId: string,
+    serviceProviderId: string
+  ): Promise<ISubscriptionSlot | null>;
+  countBySubscriptionId(subscriptionId: string): Promise<number>;
+  delete(id: string): Promise<void>;
+  deleteByUserAndSubscription(
+    userId: string,
+    subscriptionId: string
+  ): Promise<void>;
+}
+
+// Subscription Request Repository Interface
+export interface ISubscriptionRequestRepository {
+  create(
+    data: CreateSubscriptionRequestData & { userId: string }
+  ): Promise<ISubscriptionRequest>;
+  findById(id: string): Promise<ISubscriptionRequest | null>;
+  findByUserId(userId: string): Promise<ISubscriptionRequest[]>;
+  findPendingRequests(): Promise<ISubscriptionRequest[]>;
+  findPendingByServiceProvider(
+    serviceProviderId: string
+  ): Promise<ISubscriptionRequest[]>;
+  updateStatus(
+    id: string,
+    status: SubscriptionRequestStatus
+  ): Promise<ISubscriptionRequest>;
+  update(
+    id: string,
+    data: {
+      status?: SubscriptionRequestStatus;
+      assignedSlotId?: string | null;
+      processedAt?: Date;
+      metadata?: Prisma.JsonValue;
+    }
+  ): Promise<ISubscriptionRequest>;
+  delete(id: string): Promise<void>;
 }
 
 // Service Interface
@@ -143,4 +289,27 @@ export interface ISubscriptionService {
   getSubscriptionsByServiceProvider(
     serviceProviderId: string
   ): Promise<SubscriptionResponse[]>;
+  requestSubscriptionSlot(
+    userId: string,
+    data: CreateSubscriptionRequestData
+  ): Promise<SubscriptionRequestResponse>;
+  getUserSubscriptionSlots(userId: string): Promise<SubscriptionSlotResponse[]>;
+}
+
+// Slot Assignment Service Interface
+export interface ISlotAssignmentService {
+  assignSlotToUser(
+    userId: string,
+    serviceProviderId: string,
+    countryId?: string
+  ): Promise<{
+    success: boolean;
+    slotAssignment?: ISubscriptionSlot;
+    message: string;
+  }>;
+  findAvailableSlot(
+    serviceProviderId: string,
+    countryId?: string
+  ): Promise<ISubscription | null>;
+  validateSlotAssignment(subscriptionId: string): Promise<boolean>;
 }

@@ -35,7 +35,7 @@ const countryController =
  *             numericCode: "840"
  *             continent: "North America"
  *             region: "Northern America"
- *             currency: "USD"
+ *             currencyId: "cm2ksxp8t0000uvcn4kzq3mhc"
  *             phoneCode: "+1"
  *             isActive: true
  *     responses:
@@ -55,7 +55,7 @@ const countryController =
  *                 numericCode: "840"
  *                 continent: "North America"
  *                 region: "Northern America"
- *                 currency: "USD"
+ *                 currencyId: "cm2ksxp8t0000uvcn4kzq3mhc"
  *                 phoneCode: "+1"
  *                 isActive: true
  *                 createdAt: "2025-06-04T22:09:04.000Z"
@@ -148,7 +148,7 @@ const countryController =
  *                     numericCode: "840"
  *                     continent: "North America"
  *                     region: "Northern America"
- *                     currency: "USD"
+ *                     currencyId: "cm2ksxp8t0000uvcn4kzq3mhc"
  *                     phoneCode: "+1"
  *                     isActive: true
  *                     createdAt: "2025-06-04T22:09:04.000Z"
@@ -197,7 +197,7 @@ router.get("/", (req, res) => countryController.getCountries(req, res));
  *                   numericCode: "840"
  *                   continent: "North America"
  *                   region: "Northern America"
- *                   currency: "USD"
+ *                   currencyId: "cm2ksxp8t0000uvcn4kzq3mhc"
  *                   phoneCode: "+1"
  *                   isActive: true
  *                   createdAt: "2025-06-04T22:09:04.000Z"
@@ -240,7 +240,7 @@ router.get("/active", (req, res) =>
  *                 numericCode: "840"
  *                 continent: "North America"
  *                 region: "Northern America"
- *                 currency: "USD"
+ *                 currencyId: "cm2ksxp8t0000uvcn4kzq3mhc"
  *                 phoneCode: "+1"
  *                 isActive: true
  *                 createdAt: "2025-06-04T22:09:04.000Z"
@@ -290,7 +290,7 @@ router.get("/active", (req, res) =>
  *                 numericCode: "840"
  *                 continent: "North America"
  *                 region: "Northern America"
- *                 currency: "USD"
+ *                 currencyId: "cm2ksxp8t0000uvcn4kzq3mhc"
  *                 phoneCode: "+1"
  *                 isActive: true
  *                 createdAt: "2025-06-04T22:09:04.000Z"
@@ -394,7 +394,7 @@ router.delete("/:id", authenticateJWT, (req, res) =>
  *                 numericCode: "840"
  *                 continent: "North America"
  *                 region: "Northern America"
- *                 currency: "USD"
+ *                 currencyId: "cm2ksxp8t0000uvcn4kzq3mhc"
  *                 phoneCode: "+1"
  *                 isActive: true
  *                 createdAt: "2025-06-04T22:09:04.000Z"

@@ -20,12 +20,22 @@ import {
 import { ServiceProviderController } from "./controllers/serviceProviders";
 
 // Subscription imports
-import { createSubscriptionRepository } from "./repositories/subscriptions";
-import { createSubscriptionService } from "./services/subscriptions";
+import {
+  PrismaSubscriptionRepository,
+  PrismaSubscriptionSlotRepository,
+  PrismaSubscriptionRequestRepository,
+} from "./repositories/subscriptions";
+import {
+  SubscriptionService,
+  SlotAssignmentService,
+} from "./services/subscriptions";
 import { createSubscriptionController } from "./controllers/subscriptions";
 import {
   ISubscriptionRepository,
+  ISubscriptionSlotRepository,
+  ISubscriptionRequestRepository,
   ISubscriptionService,
+  ISlotAssignmentService,
 } from "./types/subscriptions";
 import { SubscriptionController } from "./controllers/subscriptions";
 
@@ -35,6 +45,13 @@ import { createCountryService } from "./services/countries";
 import { createCountryController } from "./controllers/countries";
 import { ICountryRepository, ICountryService } from "./types/countries";
 import { CountryController } from "./controllers/countries";
+
+// Currency imports
+import { createCurrencyRepository } from "./repositories/currencies";
+import { createCurrencyService } from "./services/currencies";
+import { createCurrencyController } from "./controllers/currencies";
+import { ICurrencyRepository, ICurrencyService } from "./types/currencies";
+import { CurrencyController } from "./controllers/currencies";
 
 export class Container {
   private static instance: Container;
@@ -52,7 +69,10 @@ export class Container {
 
   // Subscription module
   private subscriptionRepository: ISubscriptionRepository;
+  private subscriptionSlotRepository: ISubscriptionSlotRepository;
+  private subscriptionRequestRepository: ISubscriptionRequestRepository;
   private subscriptionService: ISubscriptionService;
+  private slotAssignmentService: ISlotAssignmentService;
   private subscriptionController: SubscriptionController;
 
   // Country module
@@ -60,9 +80,19 @@ export class Container {
   private countryService: ICountryService;
   private countryController: CountryController;
 
+  // Currency module
+  private currencyRepository: ICurrencyRepository;
+  private currencyService: ICurrencyService;
+  private currencyController: CurrencyController;
+
   private constructor() {
     // Initialize Prisma client
     this.prisma = new PrismaClient();
+
+    // Initialize Currency module (base dependency)
+    this.currencyRepository = createCurrencyRepository(this.prisma);
+    this.currencyService = createCurrencyService(this.currencyRepository);
+    this.currencyController = createCurrencyController(this.currencyService);
 
     // Initialize Country module (base dependency)
     this.countryRepository = createCountryRepository(this.prisma);
@@ -86,13 +116,30 @@ export class Container {
       this.serviceProviderService
     );
 
-    // Initialize Subscription module (depends on ServiceProvider and Country)
-    this.subscriptionRepository = createSubscriptionRepository(this.prisma);
-    this.subscriptionService = createSubscriptionService(
-      this.subscriptionRepository,
-      this.serviceProviderRepository,
-      this.countryRepository
+    // Initialize Subscription module repositories
+    this.subscriptionRepository = new PrismaSubscriptionRepository(this.prisma);
+    this.subscriptionSlotRepository = new PrismaSubscriptionSlotRepository(
+      this.prisma
     );
+    this.subscriptionRequestRepository =
+      new PrismaSubscriptionRequestRepository(this.prisma);
+
+    // Initialize slot assignment service
+    this.slotAssignmentService = new SlotAssignmentService(
+      this.subscriptionRepository,
+      this.subscriptionSlotRepository
+    );
+
+    // Initialize Subscription service with all dependencies
+    this.subscriptionService = new SubscriptionService(
+      this.subscriptionRepository,
+      this.subscriptionSlotRepository,
+      this.subscriptionRequestRepository,
+      this.serviceProviderRepository,
+      this.countryRepository,
+      this.slotAssignmentService
+    );
+
     this.subscriptionController = createSubscriptionController(
       this.subscriptionService
     );
@@ -136,8 +183,20 @@ export class Container {
     return this.subscriptionRepository;
   }
 
+  public getSubscriptionSlotRepository(): ISubscriptionSlotRepository {
+    return this.subscriptionSlotRepository;
+  }
+
+  public getSubscriptionRequestRepository(): ISubscriptionRequestRepository {
+    return this.subscriptionRequestRepository;
+  }
+
   public getSubscriptionService(): ISubscriptionService {
     return this.subscriptionService;
+  }
+
+  public getSlotAssignmentService(): ISlotAssignmentService {
+    return this.slotAssignmentService;
   }
 
   public getSubscriptionController(): SubscriptionController {
@@ -155,6 +214,19 @@ export class Container {
 
   public getCountryController(): CountryController {
     return this.countryController;
+  }
+
+  // Currency module getters
+  public getCurrencyRepository(): ICurrencyRepository {
+    return this.currencyRepository;
+  }
+
+  public getCurrencyService(): ICurrencyService {
+    return this.currencyService;
+  }
+
+  public getCurrencyController(): CurrencyController {
+    return this.currencyController;
   }
 
   // General getters
@@ -183,8 +255,14 @@ export class Container {
         return this.serviceProviderController as T;
       case "subscriptionRepository":
         return this.subscriptionRepository as T;
+      case "subscriptionSlotRepository":
+        return this.subscriptionSlotRepository as T;
+      case "subscriptionRequestRepository":
+        return this.subscriptionRequestRepository as T;
       case "subscriptionService":
         return this.subscriptionService as T;
+      case "slotAssignmentService":
+        return this.slotAssignmentService as T;
       case "subscriptionController":
         return this.subscriptionController as T;
       case "countryRepository":
@@ -193,6 +271,12 @@ export class Container {
         return this.countryService as T;
       case "countryController":
         return this.countryController as T;
+      case "currencyRepository":
+        return this.currencyRepository as T;
+      case "currencyService":
+        return this.currencyService as T;
+      case "currencyController":
+        return this.currencyController as T;
       case "prisma":
         return this.prisma as T;
       default:

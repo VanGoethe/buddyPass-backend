@@ -35,6 +35,8 @@ model User {
   
   // Relations
   refreshTokens RefreshToken[]
+  subscriptionSlots SubscriptionSlot[]
+  subscriptionRequests SubscriptionRequest[]
   
   @@map("users")
 }
@@ -55,6 +57,23 @@ model RefreshToken {
   @@map("refresh_tokens")
 }
 
+model Currency {
+  id        String   @id @default(cuid())
+  name      String   @unique // Full name (e.g., "US Dollar", "Euro")
+  code      String   @unique // ISO 4217 code (e.g., "USD", "EUR")
+  symbol    String?  // Currency symbol (e.g., "$", "€", "£")
+  minorUnit Int      @default(2) // Number of decimal places (e.g., 2 for USD, 0 for JPY)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  countries     Country[]
+  subscriptions Subscription[]
+
+  @@map("currencies")
+}
+
 model Country {
   id        String   @id @default(cuid())
   name      String   @unique
@@ -63,15 +82,17 @@ model Country {
   numericCode String? @unique // ISO 3166-1 numeric code (e.g., "840", "124", "826")
   continent String?
   region    String?
-  currency  String?
+  currencyId String? // Foreign key to Currency
   phoneCode String?
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // Relations
+  currency         Currency? @relation(fields: [currencyId], references: [id], onDelete: SetNull)
   serviceProviders ServiceProviderCountry[]
   subscriptions   Subscription[]
+  subscriptionRequests SubscriptionRequest[]
 
   @@map("countries")
 }
@@ -87,6 +108,7 @@ model ServiceProvider {
   // Relations
   subscriptions Subscription[]
   supportedCountries ServiceProviderCountry[]
+  subscriptionRequests SubscriptionRequest[]
   
   @@map("service_providers")
 }
@@ -116,7 +138,7 @@ model Subscription {
   expiresAt         DateTime?
   renewalInfo       Json?
   userPrice         Decimal?
-  currency          String?
+  currencyId        String? // Foreign key to Currency instead of string
   metadata          Json?
   isActive          Boolean   @default(true)
   createdAt         DateTime  @default(now())
@@ -125,6 +147,53 @@ model Subscription {
   // Relations
   serviceProvider ServiceProvider @relation(fields: [serviceProviderId], references: [id], onDelete: Cascade)
   country         Country?        @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  currency        Currency?       @relation(fields: [currencyId], references: [id], onDelete: SetNull)
+  subscriptionSlots SubscriptionSlot[]
   
   @@map("subscriptions")
+}
+
+model SubscriptionSlot {
+  id             String   @id @default(cuid())
+  userId         String
+  subscriptionId String
+  assignedAt     DateTime @default(now())
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  // Relations
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, subscriptionId])
+  @@map("subscription_slots")
+}
+
+enum SubscriptionRequestStatus {
+  PENDING
+  ASSIGNED
+  REJECTED
+  CANCELLED
+}
+
+model SubscriptionRequest {
+  id                String                    @id @default(cuid())
+  userId            String
+  serviceProviderId String
+  countryId         String?
+  status            SubscriptionRequestStatus @default(PENDING)
+  assignedSlotId    String?                   // Reference to SubscriptionSlot if assigned
+  requestedAt       DateTime                  @default(now())
+  processedAt       DateTime?
+  metadata          Json?
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  
+  // Relations
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  serviceProvider ServiceProvider @relation(fields: [serviceProviderId], references: [id], onDelete: Cascade)
+  country         Country?        @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  
+  @@map("subscription_requests")
 } 

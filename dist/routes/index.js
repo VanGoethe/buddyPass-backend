@@ -71,12 +71,14 @@ const users_1 = __importDefault(require("./users"));
 const serviceProviders_1 = __importDefault(require("./serviceProviders"));
 const subscriptions_1 = __importDefault(require("./subscriptions"));
 const countries_1 = __importDefault(require("./countries"));
+const currencies_1 = __importDefault(require("./currencies"));
 const admin_1 = __importDefault(require("./admin"));
 // Route configurations
 router.use("/users", users_1.default); // Clean architecture authentication and user management
 router.use("/service-providers", serviceProviders_1.default); // ServiceProvider CRUD operations
 router.use("/subscriptions", subscriptions_1.default); // Subscription CRUD operations
 router.use("/countries", countries_1.default); // Country CRUD operations
+router.use("/currencies", currencies_1.default); // Currency CRUD operations
 router.use("/admin", admin_1.default); // Admin platform management routes
 exports.default = router;
 //# sourceMappingURL=index.js.map

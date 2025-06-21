@@ -5,10 +5,16 @@
 import { Prisma } from "@prisma/client";
 import {
   ISubscription,
+  ISubscriptionSlot,
+  ISubscriptionRequest,
   CreateSubscriptionData,
   SubscriptionResponse,
+  SubscriptionSlotResponse,
+  SubscriptionRequestResponse,
+  SubscriptionRequestStatus,
 } from "../../types/subscriptions";
 import { ICountry } from "../../types/countries";
+import { User } from "../../types/users";
 
 export class Subscription implements ISubscription {
   public readonly id: string;
@@ -21,7 +27,7 @@ export class Subscription implements ISubscription {
   public readonly expiresAt?: Date | null;
   public readonly renewalInfo?: Prisma.JsonValue | null;
   public readonly userPrice?: Prisma.Decimal | null;
-  public readonly currency?: string | null;
+  public readonly currencyId?: string | null;
   public readonly metadata?: Prisma.JsonValue | null;
   public readonly isActive: boolean;
   public readonly createdAt: Date;
@@ -39,12 +45,28 @@ export class Subscription implements ISubscription {
     this.expiresAt = data.expiresAt;
     this.renewalInfo = data.renewalInfo;
     this.userPrice = data.userPrice;
-    this.currency = data.currency;
+    this.currencyId = data.currencyId;
     this.metadata = data.metadata;
     this.isActive = data.isActive;
     this.createdAt = data.createdAt;
     this.updatedAt = data.updatedAt;
     this.country = data.country;
+  }
+
+  /**
+   * Check if subscription has available slots
+   */
+  public hasAvailableSlots(): boolean {
+    return this.availableSlots > 0;
+  }
+
+  /**
+   * Check if subscription is active and not expired
+   */
+  public isActiveAndValid(): boolean {
+    if (!this.isActive) return false;
+    if (this.expiresAt && this.expiresAt <= new Date()) return false;
+    return true;
   }
 
   /**
@@ -91,9 +113,7 @@ export class Subscription implements ISubscription {
       throw new Error("User price cannot be negative");
     }
 
-    if (data.currency && data.currency.length !== 3) {
-      throw new Error("Currency must be a 3-letter code (e.g., USD, EUR)");
-    }
+    // Currency validation is handled by the Currency entity and foreign key constraints
 
     if (data.expiresAt && data.expiresAt <= new Date()) {
       throw new Error("Expiration date must be in the future");
@@ -148,13 +168,7 @@ export class Subscription implements ISubscription {
       throw new Error("User price cannot be negative");
     }
 
-    if (
-      data.currency !== undefined &&
-      data.currency &&
-      data.currency.length !== 3
-    ) {
-      throw new Error("Currency must be a 3-letter code (e.g., USD, EUR)");
-    }
+    // Currency validation is handled by the Currency entity and foreign key constraints
 
     if (
       data.expiresAt !== undefined &&
@@ -195,7 +209,7 @@ export class Subscription implements ISubscription {
       expiresAt: this.expiresAt?.toISOString() || null,
       renewalInfo: this.renewalInfo,
       userPrice: this.userPrice?.toString() || null,
-      currency: this.currency,
+      currencyId: this.currencyId,
       metadata: this.metadata,
       isActive: this.isActive,
       createdAt: this.createdAt.toISOString(),
@@ -204,7 +218,7 @@ export class Subscription implements ISubscription {
   }
 
   /**
-   * Creates a Subscription instance from Prisma result
+   * Creates domain model from Prisma data
    */
   public static fromPrisma(data: any): Subscription {
     return new Subscription({
@@ -218,12 +232,206 @@ export class Subscription implements ISubscription {
       expiresAt: data.expiresAt,
       renewalInfo: data.renewalInfo,
       userPrice: data.userPrice,
-      currency: data.currency,
+      currencyId: data.currencyId,
       metadata: data.metadata,
       isActive: data.isActive,
       createdAt: data.createdAt,
       updatedAt: data.updatedAt,
-      country: data.country || null,
+      country: data.country,
+    });
+  }
+}
+
+export class SubscriptionSlot implements ISubscriptionSlot {
+  public readonly id: string;
+  public readonly userId: string;
+  public readonly subscriptionId: string;
+  public readonly assignedAt: Date;
+  public readonly isActive: boolean;
+  public readonly createdAt: Date;
+  public readonly updatedAt: Date;
+  public readonly user?: User;
+  public readonly subscription?: ISubscription;
+
+  constructor(data: ISubscriptionSlot) {
+    this.id = data.id;
+    this.userId = data.userId;
+    this.subscriptionId = data.subscriptionId;
+    this.assignedAt = data.assignedAt;
+    this.isActive = data.isActive;
+    this.createdAt = data.createdAt;
+    this.updatedAt = data.updatedAt;
+    this.user = data.user;
+    this.subscription = data.subscription;
+  }
+
+  /**
+   * Validates slot assignment data
+   */
+  public static validateAssignmentData(data: {
+    userId: string;
+    subscriptionId: string;
+  }): void {
+    if (!data.userId || data.userId.trim().length === 0) {
+      throw new Error("User ID is required");
+    }
+
+    if (!data.subscriptionId || data.subscriptionId.trim().length === 0) {
+      throw new Error("Subscription ID is required");
+    }
+  }
+
+  /**
+   * Converts domain model to API response format
+   */
+  public toResponse(): SubscriptionSlotResponse {
+    return {
+      id: this.id,
+      userId: this.userId,
+      subscriptionId: this.subscriptionId,
+      assignedAt: this.assignedAt.toISOString(),
+      isActive: this.isActive,
+      createdAt: this.createdAt.toISOString(),
+      updatedAt: this.updatedAt.toISOString(),
+      subscription: this.subscription
+        ? {
+            id: this.subscription.id,
+            name: this.subscription.name,
+            email: this.subscription.email,
+            serviceProviderId: this.subscription.serviceProviderId,
+            userPrice: this.subscription.userPrice?.toString() || null,
+            currencyId: this.subscription.currencyId,
+            expiresAt: this.subscription.expiresAt?.toISOString() || null,
+          }
+        : undefined,
+    };
+  }
+
+  /**
+   * Creates domain model from Prisma data
+   */
+  public static fromPrisma(data: any): SubscriptionSlot {
+    return new SubscriptionSlot({
+      id: data.id,
+      userId: data.userId,
+      subscriptionId: data.subscriptionId,
+      assignedAt: data.assignedAt,
+      isActive: data.isActive,
+      createdAt: data.createdAt,
+      updatedAt: data.updatedAt,
+      user: data.user,
+      subscription: data.subscription,
+    });
+  }
+}
+
+export class SubscriptionRequest implements ISubscriptionRequest {
+  public readonly id: string;
+  public readonly userId: string;
+  public readonly serviceProviderId: string;
+  public readonly countryId?: string | null;
+  public readonly status: SubscriptionRequestStatus;
+  public readonly assignedSlotId?: string | null;
+  public readonly requestedAt: Date;
+  public readonly processedAt?: Date | null;
+  public readonly metadata?: Prisma.JsonValue | null;
+  public readonly createdAt: Date;
+  public readonly updatedAt: Date;
+  public readonly user?: User;
+  public readonly country?: ICountry | null;
+
+  constructor(data: ISubscriptionRequest) {
+    this.id = data.id;
+    this.userId = data.userId;
+    this.serviceProviderId = data.serviceProviderId;
+    this.countryId = data.countryId;
+    this.status = data.status;
+    this.assignedSlotId = data.assignedSlotId;
+    this.requestedAt = data.requestedAt;
+    this.processedAt = data.processedAt;
+    this.metadata = data.metadata;
+    this.createdAt = data.createdAt;
+    this.updatedAt = data.updatedAt;
+    this.user = data.user;
+    this.country = data.country;
+  }
+
+  /**
+   * Check if request is pending
+   */
+  public isPending(): boolean {
+    return this.status === SubscriptionRequestStatus.PENDING;
+  }
+
+  /**
+   * Check if request has been processed
+   */
+  public isProcessed(): boolean {
+    return this.status !== SubscriptionRequestStatus.PENDING;
+  }
+
+  /**
+   * Validates subscription request data
+   */
+  public static validateRequestData(data: {
+    userId: string;
+    serviceProviderId: string;
+    countryId?: string;
+  }): void {
+    if (!data.userId || data.userId.trim().length === 0) {
+      throw new Error("User ID is required");
+    }
+
+    if (!data.serviceProviderId || data.serviceProviderId.trim().length === 0) {
+      throw new Error("Service provider ID is required");
+    }
+  }
+
+  /**
+   * Converts domain model to API response format
+   */
+  public toResponse(): SubscriptionRequestResponse {
+    return {
+      id: this.id,
+      userId: this.userId,
+      serviceProviderId: this.serviceProviderId,
+      countryId: this.countryId,
+      status: this.status,
+      assignedSlotId: this.assignedSlotId,
+      requestedAt: this.requestedAt.toISOString(),
+      processedAt: this.processedAt?.toISOString() || null,
+      metadata: this.metadata,
+      createdAt: this.createdAt.toISOString(),
+      updatedAt: this.updatedAt.toISOString(),
+      country: this.country
+        ? {
+            id: this.country.id,
+            name: this.country.name,
+            code: this.country.code,
+            alpha3: this.country.alpha3,
+          }
+        : null,
+    };
+  }
+
+  /**
+   * Creates domain model from Prisma data
+   */
+  public static fromPrisma(data: any): SubscriptionRequest {
+    return new SubscriptionRequest({
+      id: data.id,
+      userId: data.userId,
+      serviceProviderId: data.serviceProviderId,
+      countryId: data.countryId,
+      status: data.status,
+      assignedSlotId: data.assignedSlotId,
+      requestedAt: data.requestedAt,
+      processedAt: data.processedAt,
+      metadata: data.metadata,
+      createdAt: data.createdAt,
+      updatedAt: data.updatedAt,
+      user: data.user,
+      country: data.country,
     });
   }
 }

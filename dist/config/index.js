@@ -19,6 +19,7 @@ exports.config = void 0;
  * Configuration module exports
  */
 __exportStar(require("./database"), exports);
+__exportStar(require("./rateLimiting"), exports);
 /**
  * Application configuration constants
  */

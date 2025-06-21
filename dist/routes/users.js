@@ -10,16 +10,18 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const passport_1 = __importDefault(require("../config/passport"));
 const container_1 = require("../container");
+const config_1 = require("../config");
 const auth_1 = require("../middleware/auth");
 const validation_1 = require("../utils/validation");
 const router = (0, express_1.Router)();
 const userController = container_1.container.getUserController();
-// Rate limiting for user auth endpoints
-// More lenient limits in test environment to prevent test failures
-const isTestEnv = process.env.NODE_ENV === "test";
-const loginRateLimit = (0, auth_1.authRateLimit)(isTestEnv ? 100 : 5, isTestEnv ? 60 * 1000 : 15 * 60 * 1000); // Test: 100 attempts per minute, Prod: 5 attempts per 15 minutes
-const registerRateLimit = (0, auth_1.authRateLimit)(isTestEnv ? 50 : 3, isTestEnv ? 60 * 1000 : 60 * 60 * 1000); // Test: 50 attempts per minute, Prod: 3 attempts per hour
-const passwordChangeRateLimit = (0, auth_1.authRateLimit)(isTestEnv ? 50 : 3, isTestEnv ? 60 * 1000 : 60 * 60 * 1000); // Test: 50 attempts per minute, Prod: 3 attempts per hour
+// Rate limiting for user auth endpoints using centralized configuration
+const loginConfig = (0, config_1.getRateLimitForEndpoint)("login");
+const registerConfig = (0, config_1.getRateLimitForEndpoint)("register");
+const passwordChangeConfig = (0, config_1.getRateLimitForEndpoint)("passwordChange");
+const loginRateLimit = (0, auth_1.authRateLimit)(loginConfig.maxAttempts, loginConfig.windowMs);
+const registerRateLimit = (0, auth_1.authRateLimit)(registerConfig.maxAttempts, registerConfig.windowMs);
+const passwordChangeRateLimit = (0, auth_1.authRateLimit)(passwordChangeConfig.maxAttempts, passwordChangeConfig.windowMs);
 /**
  * @swagger
  * /users/register:
@@ -152,10 +154,11 @@ router.post("/login", loginRateLimit, validation_1.loginValidation, auth_1.valid
  * /users/logout:
  *   post:
  *     summary: Logout user (client-side token disposal)
- *     description: Instructs client to dispose of JWT token. No server-side action required for stateless JWT.
+ *     description: Instructs client to dispose of JWT token. No server-side action required for stateless JWT. Authentication is optional - works with both valid and expired tokens.
  *     tags: [Authentication]
  *     security:
  *       - BearerAuth: []
+ *       - {}
  *     responses:
  *       200:
  *         description: Logout successful
@@ -165,13 +168,13 @@ router.post("/login", loginRateLimit, validation_1.loginValidation, auth_1.valid
  *               $ref: '#/components/schemas/SuccessResponse'
  *             example:
  *               success: true
- *               message: "Logged out successfully"
- *       401:
- *         $ref: '#/components/responses/UnauthorizedError'
+ *               message: "Logout successful"
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.post("/logout", auth_1.authenticateJWT, (req, res) => {
+// The logout route uses optionalAuth to allow both authenticated and unauthenticated users to access it.
+// This is because the client-side token disposal does not require server-side validation of the token.
+router.post("/logout", auth_1.optionalAuth, (req, res) => {
     userController.logout(req, res);
 });
 /**

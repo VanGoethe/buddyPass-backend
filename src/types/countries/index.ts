@@ -11,7 +11,7 @@ export interface ICountry {
   numericCode?: string | null; // ISO 3166-1 numeric code
   continent?: string | null;
   region?: string | null;
-  currency?: string | null;
+  currencyId?: string | null;
   phoneCode?: string | null;
   isActive: boolean;
   createdAt: Date;
@@ -26,7 +26,7 @@ export interface CreateCountryData {
   numericCode?: string;
   continent?: string;
   region?: string;
-  currency?: string;
+  currencyId?: string;
   phoneCode?: string;
   isActive?: boolean;
 }
@@ -38,7 +38,7 @@ export interface UpdateCountryData {
   numericCode?: string;
   continent?: string;
   region?: string;
-  currency?: string;
+  currencyId?: string;
   phoneCode?: string;
   isActive?: boolean;
 }
@@ -52,7 +52,7 @@ export interface CountryResponse {
   numericCode?: string | null;
   continent?: string | null;
   region?: string | null;
-  currency?: string | null;
+  currencyId?: string | null;
   phoneCode?: string | null;
   isActive: boolean;
   createdAt: string;

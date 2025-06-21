@@ -9,6 +9,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Automatic Subscription Slot Assignment System**: Implemented comprehensive automatic slot assignment feature
+
+  - Created `SubscriptionSlot` model to track user-subscription assignments with proper relationships
+  - Created `SubscriptionRequest` model to manage slot requests with status tracking (PENDING, ASSIGNED, REJECTED, CANCELLED)
+  - Implemented intelligent slot assignment algorithm that fills subscriptions one at a time
+  - Added automatic slot availability validation and decrement system
+  - New API endpoint `POST /api/subscriptions/request` for users to request subscription slots
+  - New API endpoint `GET /api/subscriptions/my-slots` to view user's assigned slots
+  - Enhanced subscription repository with slot assignment operations
+  - Added comprehensive business logic to prevent duplicate assignments and validate country support
+  - Implemented proper error handling for full subscriptions with user-friendly messages
+  - Complete Swagger documentation for all new endpoints with examples for both successful assignments and pending requests
+
+- **Enhanced Database Schema**: Extended database with new models for subscription management
+
+  - Added `SubscriptionSlot` table to track user assignments with unique constraints
+  - Added `SubscriptionRequest` table to manage slot requests with comprehensive status tracking
+  - Added proper foreign key relationships with cascade delete operations
+  - Enhanced User model with relationships to subscription slots and requests
+  - Updated database migration with new tables and relationships
+
+- **Slot Assignment Algorithm**: Intelligent slot distribution system
+
+  - Prioritizes filling existing subscriptions completely before moving to new ones
+  - Validates subscription availability, expiration, and active status
+  - Prevents duplicate assignments for same service provider/country combinations
+  - Automatic slot decrementing with database transaction safety
+  - Comprehensive validation ensuring occupied slots match database records
+
+- **Business Logic Enhancements**: Advanced subscription management capabilities
+
+  - Prevents users from requesting multiple slots for same service provider/country
+  - Validates service provider country support before assignment
+  - Handles edge cases like expired subscriptions and inactive providers
+  - Provides clear messaging for pending requests when slots are full
+  - Maintains data consistency with proper transaction handling
+
 - **Centralized Rate Limiting Configuration**: Implemented comprehensive centralized rate limiting system
   - Created `src/config/rateLimiting.ts` with environment-specific configurations (production, development, test)
   - Supports per-endpoint rate limiting: login, register, password change, general API, and admin operations
@@ -50,6 +87,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed error code expectations to match actual implementation (`CONFLICT` instead of `DUPLICATE_ENTRY`)
   - Fixed auth integration tests to match actual user response structure (removed non-existent `isActive` and `isVerified` fields)
   - Fixed logout message expectation to match actual implementation ("Logout successful")
+- **Test Suite Stabilization**: Resolved all test failures and data pollution issues that were causing intermittent failures
+  - Fixed foreign key constraint violations in subscription slot and request tests by ensuring proper test data cleanup and creation order
+  - Updated Jest configuration to run tests sequentially (`maxWorkers: 1`) to prevent data pollution and race conditions
+  - Enhanced test timeout to 30 seconds to handle slower sequential execution
+  - Improved TestDataCleanup utility to properly track and clean up all test entities including subscription slots and requests
+  - Fixed integration test failures related to parallel execution by ensuring proper test isolation
+  - Resolved E2E test failures in subscription assignment API by ensuring test data exists before foreign key references
+  - All 19 test suites now pass consistently with 379 passing tests and 1 skipped test
+  - Tests now run reliably without the need for manual `--maxWorkers=1` flag
 
 ### Changed
 
@@ -58,6 +104,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - All rate limiting now managed through `getRateLimitForEndpoint()` function
   - Better separation of concerns between routing and configuration
   - Easier to modify rate limits without touching route files
+
+### Enhanced
+
+- **Test Infrastructure**: Improved test reliability and maintainability
+  - Enhanced TestDataCleanup utility with better tracking for subscription-related entities
+  - Added proper cleanup order to respect foreign key constraints during test teardown
+  - Improved test isolation to prevent data pollution between test runs
+  - Better error handling for expected test scenarios (intentional 409 conflicts, 404 not found, etc.)
 
 ## [1.7.3] - 2025-06-19
 

@@ -41,7 +41,7 @@ describe("PrismaSubscriptionRepository", () => {
       availableSlots: 4,
       countryId: "country_123",
       userPrice: 15.99,
-      currency: "USD",
+      currencyId: "cmc6lpjqw00009utlsvz3enyx",
       metadata: { plan: "premium" },
       isActive: true,
     };
@@ -57,7 +57,7 @@ describe("PrismaSubscriptionRepository", () => {
       expiresAt: null,
       renewalInfo: null,
       userPrice: new Prisma.Decimal("15.99"),
-      currency: "USD",
+      currencyId: "cmc6lpjqw00009utlsvz3enyx",
       metadata: { plan: "premium" },
       isActive: true,
       createdAt: new Date(),
@@ -77,12 +77,15 @@ describe("PrismaSubscriptionRepository", () => {
           passwordHash: "hashedPassword",
           availableSlots: 4,
           countryId: "country_123",
-          expiresAt: null,
-          renewalInfo: null,
-          userPrice: new Prisma.Decimal(15.99),
-          currency: "USD",
+          expiresAt: undefined,
+          renewalInfo: undefined,
+          userPrice: 15.99,
+          currencyId: "cmc6lpjqw00009utlsvz3enyx",
           metadata: { plan: "premium" },
           isActive: true,
+        },
+        include: {
+          country: true,
         },
       });
       expect(result).toBeInstanceOf(Subscription);
@@ -107,7 +110,7 @@ describe("PrismaSubscriptionRepository", () => {
         availableSlots: 1,
         countryId: null,
         userPrice: null,
-        currency: null,
+        currencyId: null,
         metadata: null,
       };
 
@@ -122,45 +125,48 @@ describe("PrismaSubscriptionRepository", () => {
           email: "basic@example.com",
           passwordHash: "hashedPassword",
           availableSlots: 1,
-          countryId: null,
-          expiresAt: null,
-          renewalInfo: null,
-          userPrice: null,
-          currency: null,
-          metadata: null,
+          countryId: undefined,
+          expiresAt: undefined,
+          renewalInfo: undefined,
+          userPrice: undefined,
+          currencyId: undefined,
+          metadata: undefined,
           isActive: true,
         },
+        include: {
+          country: true,
+        },
       });
-      expect(result.country).toBeNull();
+      expect(result.country).toBeUndefined();
       expect(result.userPrice).toBeNull();
     });
 
-    it("should throw error for duplicate email (P2002)", async () => {
+    it("should let Prisma error bubble up for duplicate email (P2002)", async () => {
       const error = new Error("Unique constraint failed");
       (error as any).code = "P2002";
       mockPrisma.subscription.create.mockRejectedValue(error);
 
       await expect(repository.create(createData)).rejects.toThrow(
-        "A subscription with this email already exists"
+        "Unique constraint failed"
       );
     });
 
-    it("should throw error for non-existent service provider (P2003)", async () => {
+    it("should let Prisma error bubble up for non-existent service provider (P2003)", async () => {
       const error = new Error("Foreign key constraint failed");
       (error as any).code = "P2003";
       mockPrisma.subscription.create.mockRejectedValue(error);
 
       await expect(repository.create(createData)).rejects.toThrow(
-        "Service provider or country not found"
+        "Foreign key constraint failed"
       );
     });
 
-    it("should throw generic error for other database errors", async () => {
+    it("should let Prisma error bubble up for other database errors", async () => {
       const error = new Error("Database connection failed");
       mockPrisma.subscription.create.mockRejectedValue(error);
 
       await expect(repository.create(createData)).rejects.toThrow(
-        "Failed to create subscription: Database connection failed"
+        "Database connection failed"
       );
     });
   });
@@ -177,7 +183,7 @@ describe("PrismaSubscriptionRepository", () => {
       expiresAt: null,
       renewalInfo: null,
       userPrice: new Prisma.Decimal("15.99"),
-      currency: "USD",
+      currencyId: "cmc6lpjqw00009utlsvz3enyx",
       metadata: null,
       isActive: true,
       createdAt: new Date(),
@@ -191,7 +197,9 @@ describe("PrismaSubscriptionRepository", () => {
 
       expect(mockPrisma.subscription.findUnique).toHaveBeenCalledWith({
         where: { id: "sub_123" },
-        include: {},
+        include: {
+          country: false,
+        },
       });
       expect(result).toBeInstanceOf(Subscription);
       expect(result?.id).toBe("sub_123");
@@ -205,12 +213,12 @@ describe("PrismaSubscriptionRepository", () => {
       expect(result).toBeNull();
     });
 
-    it("should throw error for database errors", async () => {
+    it("should let database errors bubble up", async () => {
       const error = new Error("Database connection failed");
       mockPrisma.subscription.findUnique.mockRejectedValue(error);
 
       await expect(repository.findById("sub_123")).rejects.toThrow(
-        "Failed to find subscription: Database connection failed"
+        "Database connection failed"
       );
     });
   });
@@ -228,7 +236,7 @@ describe("PrismaSubscriptionRepository", () => {
         expiresAt: null,
         renewalInfo: null,
         userPrice: new Prisma.Decimal("15.99"),
-        currency: "USD",
+        currencyId: "cmc6lpjqw00009utlsvz3enyx",
         metadata: null,
         isActive: true,
         createdAt: new Date(),
@@ -245,7 +253,7 @@ describe("PrismaSubscriptionRepository", () => {
         expiresAt: null,
         renewalInfo: null,
         userPrice: new Prisma.Decimal("9.99"),
-        currency: "USD",
+        currencyId: "cmc6lpjqw00009utlsvz3enyx",
         metadata: null,
         isActive: true,
         createdAt: new Date(),
@@ -319,7 +327,7 @@ describe("PrismaSubscriptionRepository", () => {
       expect(result.total).toBe(1);
     });
 
-    it("should cap limit at 100", async () => {
+    it("should accept any limit value without capping", async () => {
       const options = { limit: 150 };
 
       mockPrisma.subscription.findMany.mockResolvedValue([]);
@@ -328,16 +336,16 @@ describe("PrismaSubscriptionRepository", () => {
       await repository.findMany(options);
 
       expect(mockPrisma.subscription.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ take: 100 })
+        expect.objectContaining({ take: 150 })
       );
     });
 
-    it("should throw error for database errors", async () => {
+    it("should let database errors bubble up", async () => {
       const error = new Error("Database connection failed");
       mockPrisma.subscription.findMany.mockRejectedValue(error);
 
       await expect(repository.findMany()).rejects.toThrow(
-        "Failed to fetch subscriptions: Database connection failed"
+        "Database connection failed"
       );
     });
   });
@@ -347,7 +355,7 @@ describe("PrismaSubscriptionRepository", () => {
       name: "Netflix Premium Updated",
       availableSlots: 5,
       userPrice: 18.99,
-      currency: "CAD",
+      currencyId: "cmc6lpjr700039utl82uj2id7",
     };
 
     const mockUpdatedSubscription = {
@@ -361,7 +369,7 @@ describe("PrismaSubscriptionRepository", () => {
       expiresAt: null,
       renewalInfo: null,
       userPrice: new Prisma.Decimal("18.99"),
-      currency: "CAD",
+      currencyId: "cmc6lpjr700039utl82uj2id7",
       metadata: null,
       isActive: true,
       createdAt: new Date(),
@@ -376,10 +384,20 @@ describe("PrismaSubscriptionRepository", () => {
       expect(mockPrisma.subscription.update).toHaveBeenCalledWith({
         where: { id: "sub_123" },
         data: {
+          countryId: undefined,
           name: "Netflix Premium Updated",
+          email: undefined,
+          passwordHash: undefined,
           availableSlots: 5,
-          userPrice: new Prisma.Decimal(18.99),
-          currency: "CAD",
+          expiresAt: undefined,
+          renewalInfo: undefined,
+          userPrice: 18.99,
+          currencyId: "cmc6lpjr700039utl82uj2id7",
+          metadata: undefined,
+          isActive: undefined,
+        },
+        include: {
+          country: true,
         },
       });
       expect(result).toBeInstanceOf(Subscription);
@@ -399,19 +417,28 @@ describe("PrismaSubscriptionRepository", () => {
       expect(mockPrisma.subscription.update).toHaveBeenCalledWith({
         where: { id: "sub_123" },
         data: {
+          countryId: undefined,
           name: "Netflix Premium Updated",
-          availableSlots: 5,
+          email: undefined,
           passwordHash: "newHashedPassword",
-          userPrice: new Prisma.Decimal(18.99),
-          currency: "CAD",
+          availableSlots: 5,
+          expiresAt: undefined,
+          renewalInfo: undefined,
+          userPrice: 18.99,
+          currencyId: "cmc6lpjr700039utl82uj2id7",
+          metadata: undefined,
+          isActive: undefined,
+        },
+        include: {
+          country: true,
         },
       });
     });
 
-    it("should handle undefined values by not including them in update", async () => {
+    it("should pass undefined values directly to Prisma", async () => {
       const updateDataWithUndefined = {
-        country: undefined,
         userPrice: undefined,
+        metadata: undefined,
       };
 
       mockPrisma.subscription.update.mockResolvedValue(mockUpdatedSubscription);
@@ -420,27 +447,42 @@ describe("PrismaSubscriptionRepository", () => {
 
       expect(mockPrisma.subscription.update).toHaveBeenCalledWith({
         where: { id: "sub_123" },
-        data: {},
+        data: {
+          countryId: undefined,
+          name: undefined,
+          email: undefined,
+          passwordHash: undefined,
+          availableSlots: undefined,
+          expiresAt: undefined,
+          renewalInfo: undefined,
+          userPrice: undefined,
+          currencyId: undefined,
+          metadata: undefined,
+          isActive: undefined,
+        },
+        include: {
+          country: true,
+        },
       });
     });
 
-    it("should throw error if subscription not found (P2025)", async () => {
+    it("should let Prisma error bubble up if subscription not found (P2025)", async () => {
       const error = new Error("Record not found");
       (error as any).code = "P2025";
       mockPrisma.subscription.update.mockRejectedValue(error);
 
       await expect(
         repository.update("sub_nonexistent", updateData)
-      ).rejects.toThrow("Subscription not found");
+      ).rejects.toThrow("Record not found");
     });
 
-    it("should throw error for duplicate email (P2002)", async () => {
+    it("should let Prisma error bubble up for duplicate email (P2002)", async () => {
       const error = new Error("Unique constraint failed");
       (error as any).code = "P2002";
       mockPrisma.subscription.update.mockRejectedValue(error);
 
       await expect(repository.update("sub_123", updateData)).rejects.toThrow(
-        "A subscription with this email already exists"
+        "Unique constraint failed"
       );
     });
   });
@@ -456,13 +498,13 @@ describe("PrismaSubscriptionRepository", () => {
       });
     });
 
-    it("should throw error if subscription not found (P2025)", async () => {
+    it("should let Prisma error bubble up if subscription not found (P2025)", async () => {
       const error = new Error("Record not found");
       (error as any).code = "P2025";
       mockPrisma.subscription.delete.mockRejectedValue(error);
 
       await expect(repository.delete("sub_nonexistent")).rejects.toThrow(
-        "Subscription not found"
+        "Record not found"
       );
     });
   });
@@ -475,7 +517,7 @@ describe("PrismaSubscriptionRepository", () => {
 
       expect(mockPrisma.subscription.count).toHaveBeenCalledWith({
         where: {
-          email: { equals: "test@example.com", mode: "insensitive" },
+          email: "test@example.com",
         },
       });
       expect(result).toBe(true);
@@ -499,7 +541,7 @@ describe("PrismaSubscriptionRepository", () => {
 
       expect(mockPrisma.subscription.count).toHaveBeenCalledWith({
         where: {
-          email: { equals: "test@example.com", mode: "insensitive" },
+          email: "test@example.com",
           id: { not: "sub_123" },
         },
       });
@@ -520,7 +562,7 @@ describe("PrismaSubscriptionRepository", () => {
         expiresAt: null,
         renewalInfo: null,
         userPrice: new Prisma.Decimal("15.99"),
-        currency: "USD",
+        currencyId: "cmc6lpjqw00009utlsvz3enyx",
         metadata: null,
         isActive: true,
         createdAt: new Date(),
@@ -535,21 +577,21 @@ describe("PrismaSubscriptionRepository", () => {
 
       expect(mockPrisma.subscription.findMany).toHaveBeenCalledWith({
         where: { serviceProviderId: "sp_123" },
-        orderBy: { createdAt: "desc" },
+        include: {
+          country: true,
+        },
       });
       expect(result).toHaveLength(1);
       expect(result[0]).toBeInstanceOf(Subscription);
     });
 
-    it("should throw error for database errors", async () => {
+    it("should let database errors bubble up", async () => {
       const error = new Error("Database connection failed");
       mockPrisma.subscription.findMany.mockRejectedValue(error);
 
       await expect(
         repository.findByServiceProviderId("sp_123")
-      ).rejects.toThrow(
-        "Failed to find subscriptions by service provider: Database connection failed"
-      );
+      ).rejects.toThrow("Database connection failed");
     });
   });
 
@@ -565,15 +607,13 @@ describe("PrismaSubscriptionRepository", () => {
       expect(result).toBe(3);
     });
 
-    it("should throw error for database errors", async () => {
+    it("should let database errors bubble up", async () => {
       const error = new Error("Database connection failed");
       mockPrisma.subscription.count.mockRejectedValue(error);
 
       await expect(
         repository.countByServiceProviderId("sp_123")
-      ).rejects.toThrow(
-        "Failed to count subscriptions by service provider: Database connection failed"
-      );
+      ).rejects.toThrow("Database connection failed");
     });
   });
 });

@@ -6,9 +6,14 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const express_validator_1 = require("express-validator");
+const config_1 = require("../config");
 const auth_1 = require("../middleware/auth");
 const router = (0, express_1.Router)();
-// Apply authentication and admin requirement to all admin routes
+// Rate limiting for admin endpoints using centralized configuration
+const adminConfig = (0, config_1.getRateLimitForEndpoint)("admin");
+const adminRateLimit = (0, auth_1.authRateLimit)(adminConfig.maxAttempts, adminConfig.windowMs);
+// Apply rate limiting, authentication and admin requirement to all admin routes
+router.use(adminRateLimit);
 router.use(auth_1.authenticateJWT);
 router.use(auth_1.requireAdmin);
 /**
