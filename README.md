@@ -28,89 +28,95 @@ BuddyPass Backend is a sophisticated **Node.js/TypeScript** application designed
 - **📊 Repository Pattern**: Abstract data access layer with transaction management
 - **🛡️ Security-First Design**: JWT-based authentication, RBAC, and comprehensive input validation
 - **📝 OpenAPI-First**: Complete API specification with Swagger documentation
-- **🧪 Test-Driven Development**: Comprehensive test coverage with automated cleanup
+- **🧪 Test-Driven Development**: 379 tests with automated cleanup utilities
 
 ## 🚀 Key Features & Capabilities
 
 ### 🔐 **Advanced Authentication & Authorization**
 
-- **Multi-Provider Authentication**: Email/password and Google OAuth2 integration
+- **Multi-Provider Authentication**: Email/password and Google OAuth2 integration with Passport.js
 - **JWT Security Architecture**: Access tokens (15min) + Refresh tokens (7 days) with automatic rotation
-- **Role-Based Access Control (RBAC)**: Granular permissions with USER/ADMIN roles
-- **Session Management**: Secure token lifecycle with blacklisting and cleanup
-- **Rate Limiting**: Intelligent brute-force protection with progressive delays
+- **Role-Based Access Control (RBAC)**: Granular permissions with USER/ADMIN roles and self-protection
+- **Session Management**: Secure token lifecycle with database-backed refresh token management
+- **Centralized Rate Limiting**: Environment-aware progressive rate limiting with configurable thresholds
 
 ### 🌍 **Subscription Management Platform**
 
-- **Service Provider Network**: Multi-country service provider management with geographical restrictions
-- **Subscription Orchestration**: Complex subscription lifecycle with slot management and renewal tracking
-- **Country Compliance**: ISO 3166-1 compliant country management with geographic validation
-- **Pricing Engine**: Multi-currency support with decimal precision financial calculations
-- **Metadata Management**: Flexible JSON-based metadata for extensible data models
+- **Intelligent Slot Assignment**: Automatic subscription slot allocation with business rule validation
+- **Subscription Request System**: Status-tracked requests (PENDING, ASSIGNED, REJECTED, CANCELLED)
+- **Multi-Country Support**: ISO 3166-1 compliant country management with service provider restrictions
+- **Currency System**: ISO 4217 compliant multi-currency support with decimal precision
+- **Complete Lifecycle Management**: Full CRUD operations with expiration tracking and renewal management
 
 ### 📊 **Enterprise-Grade Database Design**
 
-- **PostgreSQL with Prisma ORM**: Type-safe database operations with migration management
+- **PostgreSQL with Prisma ORM**: Type-safe database operations with automated migrations
 - **Referential Integrity**: Comprehensive foreign key relationships with cascade handling
-- **Transaction Management**: ACID compliance with distributed transaction support
-- **Connection Pooling**: Optimized database connections for high-throughput scenarios
-- **Data Validation**: Multi-layer validation from database constraints to business rules
+- **Transaction Management**: ACID compliance with proper error handling and rollback
+- **Optimized Schema**: Strategic indexing and constraint design for performance
 
 ### 🛡️ **Security & Compliance**
 
-- **Input Validation**: Comprehensive request validation with sanitization
-- **Password Security**: Bcrypt hashing with configurable salt rounds
-- **CORS Configuration**: Fine-grained cross-origin resource sharing controls
-- **Helmet Integration**: Security headers and vulnerability protection
-- **Audit Logging**: Comprehensive request/response logging with correlation IDs
+- **Multi-Layer Validation**: express-validator with custom business rule validation
+- **Password Security**: Bcrypt hashing with 12+ salt rounds and complexity requirements
+- **Security Headers**: Helmet.js integration with CORS configuration
+- **Admin Protection**: Built-in safeguards preventing admin self-lockout scenarios
 
 ## 📁 Project Architecture
 
 ```
 src/
 ├── 🎮 controllers/              # HTTP request handlers (presentation layer)
-│   ├── users/                   # User management endpoints
-│   ├── subscriptions/           # Subscription CRUD operations
+│   ├── users/                   # User management & authentication endpoints
+│   ├── subscriptions/           # Subscription CRUD & slot assignment
 │   ├── serviceProviders/        # Service provider management
-│   └── countries/               # Geographic data management
+│   ├── countries/               # Geographic data management
+│   ├── currencies/              # Currency management
+│   └── admin/                   # Administrative platform management
 ├── 🏢 services/                 # Business logic orchestration
-│   ├── users/                   # User domain services
-│   ├── subscriptions/           # Subscription business rules
-│   └── serviceProviders/        # Provider validation & management
+│   ├── users/                   # User domain services & OAuth handling
+│   ├── subscriptions/           # Subscription business rules & slot assignment
+│   ├── serviceProviders/        # Provider validation & country restrictions
+│   └── countries/               # Geographic data validation
 ├── 🗄️ repositories/            # Data access layer
-│   ├── users/                   # User data persistence
-│   ├── subscriptions/           # Subscription data operations
-│   └── countries/               # Geographic data access
+│   ├── users/                   # User data persistence & refresh tokens
+│   ├── subscriptions/           # Subscription, slot, and request data operations
+│   ├── serviceProviders/        # Provider and country relationship management
+│   └── countries/               # Geographic and currency data access
 ├── 🏛️ models/                  # Domain entity definitions
-│   ├── User.ts                  # User domain model
-│   ├── Subscription.ts          # Subscription entity
-│   └── ServiceProvider.ts       # Provider domain model
+│   ├── users/                   # User domain model with OAuth support
+│   ├── subscriptions/           # Subscription entities with slot management
+│   └── countries/               # Geographic and currency models
 ├── 📋 types/                    # TypeScript interfaces & DTOs
-│   ├── users/                   # User-related type definitions
-│   ├── subscriptions/           # Subscription type contracts
+│   ├── users/                   # Authentication & user management types
+│   ├── subscriptions/           # Subscription management contracts
 │   └── common/                  # Shared type definitions
 ├── 🛠️ middleware/              # Express middleware stack
-│   ├── auth.ts                  # JWT authentication middleware
-│   ├── rateLimiter.ts           # Rate limiting implementation
-│   └── validation.ts            # Request validation middleware
+│   ├── auth.ts                  # JWT authentication & role-based authorization
+│   ├── errorHandler.ts          # Centralized error handling with logging
+│   └── validation/              # Request validation middleware
 ├── 🔧 config/                   # Application configuration
-│   ├── database.ts              # Database connection setup
-│   ├── swagger.ts               # OpenAPI specification
-│   └── auth.ts                  # Authentication configuration
+│   ├── database.ts              # Prisma client configuration
+│   ├── swagger.ts               # Complete OpenAPI specification
+│   ├── auth.ts                  # JWT & OAuth configuration
+│   ├── passport.ts              # Passport.js strategy configuration
+│   └── rateLimiting.ts          # Centralized rate limiting configuration
 ├── 🧪 utils/                    # Utility functions & helpers
-│   ├── encryption.ts            # Cryptographic utilities
 │   ├── validation.ts            # Input validation helpers
-│   └── testCleanup.ts           # Test data management
+│   └── testCleanup.ts           # Automated test data management
 └── 📡 routes/                   # API route definitions
-    ├── users.ts                 # User authentication routes
-    ├── subscriptions.ts         # Subscription management routes
-    └── admin.ts                 # Administrative endpoints
+    ├── users.ts                 # Authentication & user management routes
+    ├── subscriptions.ts         # Subscription management & slot assignment
+    ├── serviceProviders.ts      # Provider management routes
+    ├── countries.ts             # Geographic data routes
+    ├── currencies.ts            # Currency management routes
+    └── admin.ts                 # Administrative platform routes
 
 tests/
-├── 🧪 unit/                     # Unit tests with mocking
-├── 🔗 integration/              # Integration tests with test DB
-├── 🌐 e2e/                     # End-to-end API tests
-└── 🛠️ utils/                   # Test utilities & fixtures
+├── 🧪 unit/                     # Unit tests with comprehensive mocking
+├── 🔗 integration/              # Integration tests with test database
+├── 🌐 e2e/                     # End-to-end API workflow tests
+└── 🛠️ utils/                   # Test utilities with automated cleanup
 ```
 
 ## 🚀 Quick Start Guide
@@ -119,14 +125,13 @@ tests/
 
 - **Node.js 18+** (LTS recommended)
 - **PostgreSQL 13+** with extensions support
-- **Google OAuth Credentials** (for OAuth integration)
-- **Git** for version control
+- **Google OAuth Credentials** (optional, for OAuth integration)
 
 ### Installation & Setup
 
 ```bash
 # 1. Clone the repository
-git clone git@github.com:VanGoethe/buddyPass-backend.git
+git clone <repository-url>
 cd buddypass-backend
 
 # 2. Install dependencies with exact versions
@@ -155,23 +160,21 @@ The API will be available at `http://localhost:3000` with interactive documentat
 # Database Configuration
 DATABASE_URL="postgresql://username:password@localhost:5432/buddypass_db"
 
-# JWT Security
-JWT_SECRET="your_256_bit_secret_key_here"
-JWT_REFRESH_SECRET="your_256_bit_refresh_secret_here"
-
-# Google OAuth (Optional)
-GOOGLE_CLIENT_ID="your_google_oauth_client_id"
-GOOGLE_CLIENT_SECRET="your_google_oauth_client_secret"
-
-# Application Configuration
-NODE_ENV="development"
+# Server Configuration
 PORT=3000
-CORS_ORIGIN="http://localhost:3000"
+NODE_ENV=development
+CORS_ORIGIN=http://localhost:3000
 
-# Admin Setup (for create-admin script)
-ADMIN_EMAIL="admin@yourcompany.com"
-ADMIN_PASSWORD="SecureAdminPassword123!"
-ADMIN_NAME="Platform Administrator"
+# JWT Security Configuration
+JWT_SECRET=your_jwt_secret_here
+JWT_REFRESH_SECRET=your_jwt_refresh_secret_here
+JWT_EXPIRES_IN=15m
+JWT_REFRESH_EXPIRES_IN=7d
+
+# Google OAuth Configuration (Optional)
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+GOOGLE_CALLBACK_URL=http://localhost:3000/api/users/auth/google/callback
 ```
 
 ## 📚 API Documentation
@@ -180,59 +183,65 @@ ADMIN_NAME="Platform Administrator"
 
 - **Swagger UI**: `http://localhost:3000/api-docs`
 - **OpenAPI Spec**: `http://localhost:3000/api-docs.json`
+- **Health Check**: `http://localhost:3000/health`
 
 ### Core API Endpoints
 
 #### 🔐 Authentication & User Management
 
 ```http
-POST   /api/users/auth/register         # User registration
-POST   /api/users/auth/login            # User authentication
-POST   /api/users/auth/refresh          # Token refresh
-POST   /api/users/auth/logout           # Secure logout
-GET    /api/users/auth/profile          # User profile
-PUT    /api/users/auth/profile          # Update profile
-PUT    /api/users/auth/change-password  # Password change
-```
-
-#### 🌍 Geographic Data Management
-
-```http
-GET    /api/countries                   # List countries (paginated)
-GET    /api/countries/active            # Active countries only
-GET    /api/countries/:id               # Country details
-GET    /api/countries/code/:code        # Get by ISO code
-POST   /api/countries                   # Create country (admin)
-PUT    /api/countries/:id               # Update country (admin)
-```
-
-#### 🏢 Service Provider Management
-
-```http
-GET    /api/service-providers           # List providers (filtered)
-GET    /api/service-providers/:id       # Provider details
-POST   /api/service-providers          # Create provider (admin)
-PUT    /api/service-providers/:id       # Update provider (admin)
-DELETE /api/service-providers/:id       # Delete provider (admin)
+POST   /api/users/auth/register       # User registration with validation
+POST   /api/users/auth/login          # Email/password authentication
+GET    /api/users/auth/google         # Google OAuth initiation
+GET    /api/users/auth/google/callback # Google OAuth callback
+POST   /api/users/auth/logout         # Secure logout with token cleanup
+GET    /api/users/auth/profile        # User profile retrieval
+PUT    /api/users/auth/profile        # Profile updates (name, avatar)
+PUT    /api/users/auth/change-password # Password change with validation
 ```
 
 #### 💳 Subscription Management
 
 ```http
-GET    /api/subscriptions              # List subscriptions (filtered)
-GET    /api/subscriptions/:id          # Subscription details
-POST   /api/subscriptions             # Create subscription
-PUT    /api/subscriptions/:id          # Update subscription
-DELETE /api/subscriptions/:id          # Delete subscription
+GET    /api/subscriptions             # List subscriptions with filtering
+POST   /api/subscriptions             # Create subscription with validation
+GET    /api/subscriptions/:id         # Get subscription details
+PUT    /api/subscriptions/:id         # Update subscription
+DELETE /api/subscriptions/:id         # Delete subscription with cleanup
+POST   /api/subscriptions/request     # Request slot assignment
+GET    /api/subscriptions/my-slots    # User's assigned subscription slots
+```
+
+#### 🏢 Service Provider Management
+
+```http
+GET    /api/service-providers         # List providers with country filtering
+POST   /api/service-providers         # Create provider (admin only)
+GET    /api/service-providers/:id     # Get provider with supported countries
+PUT    /api/service-providers/:id     # Update provider (admin only)
+DELETE /api/service-providers/:id     # Delete provider (admin only)
+```
+
+#### 🌍 Geographic & Currency Data
+
+```http
+GET    /api/countries                 # List countries with pagination
+GET    /api/countries/active          # Active countries only
+GET    /api/countries/:id             # Country details with currency
+GET    /api/countries/code/:code      # Get country by ISO code
+GET    /api/currencies               # List currencies with details
+GET    /api/currencies/active        # Active currencies only
 ```
 
 #### 👑 Administrative Functions
 
 ```http
-GET    /api/admin/dashboard            # Platform statistics
-GET    /api/admin/users                # User management
-PUT    /api/admin/users/:id/role       # Role management
-GET    /api/admin/system/health        # System health check
+GET    /api/admin/dashboard          # Platform statistics and metrics
+GET    /api/admin/users              # User management with pagination
+GET    /api/admin/users/:id          # Detailed user information
+PUT    /api/admin/users/:id          # Update user profile (admin)
+PUT    /api/admin/users/:id/role     # Change user role with protection
+DELETE /api/admin/users/:id          # Delete user account with cleanup
 ```
 
 ### Response Format Standards
@@ -266,7 +275,7 @@ All API responses follow a consistent format:
 
 ## 🏗️ Database Schema & Relationships
 
-### Entity Relationship Overview
+### Entity Relationship Diagram
 
 ```mermaid
 erDiagram
@@ -275,9 +284,14 @@ erDiagram
         string email UK
         string name
         string password
+        string googleId UK
+        string provider
         string role
         boolean isVerified
+        boolean isActive
         datetime createdAt
+        datetime updatedAt
+        datetime lastLoginAt
     }
 
     RefreshToken {
@@ -285,6 +299,7 @@ erDiagram
         string token UK
         string userId FK
         datetime expiresAt
+        datetime createdAt
     }
 
     Country {
@@ -292,8 +307,23 @@ erDiagram
         string name UK
         string code UK
         string alpha3 UK
+        string numericCode UK
         string continent
+        string region
+        string currencyId FK
+        string phoneCode
         boolean isActive
+        datetime createdAt
+    }
+
+    Currency {
+        string id PK
+        string name UK
+        string code UK
+        string symbol
+        int minorUnit
+        boolean isActive
+        datetime createdAt
     }
 
     ServiceProvider {
@@ -301,6 +331,14 @@ erDiagram
         string name
         string description
         json metadata
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    ServiceProviderCountry {
+        string id PK
+        string serviceProviderId FK
+        string countryId FK
         datetime createdAt
     }
 
@@ -310,47 +348,91 @@ erDiagram
         string countryId FK
         string name
         string email
+        string passwordHash
         int availableSlots
-        decimal userPrice
         datetime expiresAt
+        json renewalInfo
+        decimal userPrice
+        string currencyId FK
+        json metadata
+        boolean isActive
+        datetime createdAt
     }
 
-    ServiceProviderCountry {
+    SubscriptionSlot {
         string id PK
+        string userId FK
+        string subscriptionId FK
+        datetime assignedAt
+        boolean isActive
+        datetime createdAt
+    }
+
+    SubscriptionRequest {
+        string id PK
+        string userId FK
         string serviceProviderId FK
         string countryId FK
+        string status
+        string assignedSlotId
+        datetime requestedAt
+        datetime processedAt
+        json metadata
+        datetime createdAt
     }
 
-    User ||--o{ RefreshToken : "has"
-    ServiceProvider ||--o{ ServiceProviderCountry : "supports"
-    Country ||--o{ ServiceProviderCountry : "supported_by"
+    User ||--o{ RefreshToken : "has refresh tokens"
+    User ||--o{ SubscriptionSlot : "has assigned slots"
+    User ||--o{ SubscriptionRequest : "makes requests"
+
+    Currency ||--o{ Country : "is currency of"
+    Currency ||--o{ Subscription : "prices in"
+
+    Country ||--o{ ServiceProviderCountry : "supported by providers"
+    Country ||--o{ Subscription : "located in"
+    Country ||--o{ SubscriptionRequest : "requested for"
+
+    ServiceProvider ||--o{ ServiceProviderCountry : "supports countries"
     ServiceProvider ||--o{ Subscription : "provides"
-    Country ||--o{ Subscription : "located_in"
+    ServiceProvider ||--o{ SubscriptionRequest : "requested from"
+
+    Subscription ||--o{ SubscriptionSlot : "has slots"
+
+    ServiceProviderCountry }o--|| ServiceProvider : "belongs to"
+    ServiceProviderCountry }o--|| Country : "for country"
 ```
+
+### Key Database Features
+
+- **CUID Primary Keys**: Collision-resistant unique identifiers
+- **Cascading Deletes**: Proper foreign key constraint handling
+- **Unique Constraints**: Email uniqueness, country codes, currency codes
+- **Optimistic Locking**: UpdatedAt timestamps for conflict detection
+- **JSON Metadata**: Flexible extension points for future features
+- **Index Strategy**: Strategic indexing on frequently queried fields
 
 ## 🧪 Testing Strategy
 
 ### Comprehensive Test Coverage
 
 ```bash
-# Run all tests
+# Run all tests (379 tests)
 npm test
 
 # Run specific test suites
 npm run test:unit           # Unit tests with mocking
 npm run test:integration    # Integration tests with test DB
 npm run test:e2e           # End-to-end API tests
-
-# Test coverage report
-npm run test:coverage
 ```
 
-### Test Architecture
+### Test Architecture & Features
 
 - **🧪 Unit Tests**: Service layer business logic with comprehensive mocking
 - **🔗 Integration Tests**: Repository layer with real database interactions
 - **🌐 E2E Tests**: Full API workflow testing with authentication
-- **🛠️ Test Utilities**: Automated test data cleanup preventing database pollution
+- **🛠️ Automated Cleanup**: `TestDataCleanup` utility prevents database pollution
+- **🔄 Sequential Execution**: Tests run sequentially to prevent race conditions
+- **📊 Coverage Tracking**: Comprehensive test coverage reporting
 
 ### Test Data Management
 
@@ -358,13 +440,16 @@ npm run test:coverage
 // Automated test data cleanup
 import { withTestCleanup } from "../utils/testCleanup";
 
-describe("User Service", () => {
+describe("Subscription Service", () => {
   it(
-    "should create user with cleanup",
+    "should assign slots with cleanup",
     withTestCleanup(async (cleanup) => {
       const user = await cleanup.getOrCreateTestUser("test@example.com");
-      // Test logic here...
-      // Cleanup happens automatically
+      const country = await cleanup.getOrCreateTestCountry(
+        "US",
+        "United States"
+      );
+      // Test logic here - cleanup happens automatically
     })
   );
 });
@@ -372,14 +457,15 @@ describe("User Service", () => {
 
 ## 🔒 Security Implementation
 
-### Authentication Security
+### Authentication & Authorization
 
-- **🔐 JWT Implementation**: RS256 algorithm with short-lived access tokens
-- **🔄 Token Rotation**: Automatic refresh token rotation with family invalidation
-- **🛡️ Password Security**: Bcrypt with configurable salt rounds (12+)
-- **🚫 Session Management**: Token blacklisting and secure logout
+- **🔐 JWT Implementation**: Secure token generation with configurable expiration
+- **🔄 Refresh Token Rotation**: Automatic token refresh with family invalidation
+- **🛡️ Password Security**: Bcrypt hashing with 12+ salt rounds
+- **🚫 Admin Protection**: Self-operation prevention for admin accounts
+- **👥 Role-Based Access Control**: Granular permission system
 
-### Input Validation & Sanitization
+### Input Validation & Rate Limiting
 
 ```typescript
 // Multi-layer validation example
@@ -387,160 +473,138 @@ const registerValidation = [
   body("email").isEmail().normalizeEmail(),
   body("password")
     .isLength({ min: 8 })
-    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/),
-  body("name").optional().trim().escape(),
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])/),
+  body("name").isLength({ min: 2, max: 100 }).trim().escape(),
 ];
+
+// Environment-aware rate limiting
+const getRateLimitForEndpoint = (endpoint: string) => {
+  return rateLimitConfig[endpoint]; // Centralized configuration
+};
 ```
 
-### Rate Limiting Strategy
+### Security Headers & Middleware
 
-```typescript
-// Progressive rate limiting
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Limit each IP to 5 requests per windowMs
-  message: "Too many authentication attempts, please try again later",
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-```
+- **Helmet.js Integration**: Comprehensive security headers
+- **CORS Configuration**: Fine-grained cross-origin resource sharing
+- **Error Handling**: Sanitized error responses preventing information leaks
+- **Request Logging**: Structured logging without sensitive data exposure
 
-## 📊 Performance & Scalability
+## 📊 Performance & Monitoring
 
 ### Database Optimization
 
-- **Connection Pooling**: Optimized pool size for concurrent requests
-- **Query Optimization**: Selective field retrieval and efficient joins
+- **Connection Pooling**: Optimized Prisma client configuration
+- **Query Optimization**: Selective field retrieval with proper includes
+- **Transaction Management**: Minimal transaction scope with proper error handling
 - **Index Strategy**: Strategic indexing on frequently queried fields
-- **Transaction Management**: Minimal transaction scope with rollback handling
 
-### Caching Strategy
-
-- **Response Caching**: Implemented for static data (countries, providers)
-- **Query Result Caching**: Database query result caching for expensive operations
-- **Redis Integration**: Ready for distributed caching implementation
-
-### Monitoring & Observability
+### Monitoring & Health Checks
 
 ```typescript
-// Request correlation tracking
-app.use((req, res, next) => {
-  req.correlationId = uuidv4();
-  res.set("X-Correlation-ID", req.correlationId);
-  next();
-});
+// Health check endpoint with system information
+GET /api/health
+{
+  "status": "OK",
+  "timestamp": "2025-06-21T22:13:49.000Z",
+  "version": "1.0.0",
+  "uptime": 3600.5
+}
 ```
-
-## 🚀 Deployment & DevOps
-
-### Production Configuration
-
-```bash
-# Production build
-npm run build
-
-# Start production server
-npm start
-
-# Database migrations in production
-npm run migrate:deploy
-```
-
-### Docker Support
-
-```dockerfile
-# Multi-stage build for optimized production image
-FROM node:18-alpine AS builder
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-
-FROM node:18-alpine AS production
-WORKDIR /app
-COPY --from=builder /app/node_modules ./node_modules
-COPY dist ./dist
-EXPOSE 3000
-CMD ["node", "dist/server.js"]
-```
-
-### Health Checks
-
-```http
-GET /api/admin/system/health
-```
-
-Returns comprehensive system status including database connectivity, memory usage, and response times.
-
-## 🔄 Development Workflow
-
-### Git Workflow
-
-- **Feature Branches**: `feature/feature-name`
-- **Conventional Commits**: Standardized commit messages
-- **Code Review**: Mandatory PR reviews with architecture compliance checks
-- **Automated Testing**: CI/CD pipeline with comprehensive test coverage
-
-### Code Quality Standards
-
-- **TypeScript Strict Mode**: Full type safety with strict compiler options
-- **ESLint + Prettier**: Automated code formatting and linting
-- **Husky Pre-commit Hooks**: Automated testing and formatting on commit
-- **SonarQube Integration**: Code quality metrics and technical debt tracking
-
-## 📈 Monitoring & Analytics
 
 ### Logging Strategy
 
-```typescript
-// Structured logging with correlation IDs
-logger.info("User registration attempt", {
-  correlationId: req.correlationId,
-  email: sanitizeEmail(req.body.email),
-  userAgent: req.get("User-Agent"),
-  ip: req.ip,
-});
+- **Structured Logging**: JSON format for machine readability
+- **Error Tracking**: Comprehensive error logging with context
+- **Performance Monitoring**: Request/response time tracking
+- **Security Logging**: Authentication and authorization event logging
+
+## 🤝 Contributing & Development
+
+### Development Standards
+
+- **Clean Architecture**: Maintain strict layer separation
+- **TypeScript Strict Mode**: Full type safety across the application
+- **Test-Driven Development**: Write tests before implementation
+- **Code Review**: Mandatory PR reviews with architecture compliance
+
+### Getting Started with Development
+
+```bash
+# Setup development environment
+npm run dev          # Start with hot reload
+npm run test:watch   # Run tests in watch mode
+
+# Code quality checks
+npm run lint         # ESLint checking
+npm run format       # Prettier formatting
+npm run type-check   # TypeScript compilation check
 ```
-
-### Metrics & Alerting
-
-- **Response Time Monitoring**: P95, P99 response time tracking
-- **Error Rate Tracking**: 4xx/5xx error rate monitoring with alerting
-- **Database Performance**: Query performance monitoring with slow query alerts
-- **Security Monitoring**: Failed authentication attempt tracking
-
-## 🤝 Contributing
-
-### Development Setup
-
-1. **Fork & Clone**: Fork the repository and clone locally
-2. **Environment Setup**: Copy `.env.example` and configure for development
-3. **Database Setup**: Run migrations and seed data
-4. **Testing**: Ensure all tests pass before submitting PR
-
-### Code Standards
-
-- **Clean Architecture**: Follow established layer separation
-- **Interface Segregation**: Define clear contracts between layers
-- **Test Coverage**: Maintain >90% test coverage
-- **Documentation**: Update API documentation with changes
 
 ### Pull Request Process
 
-1. **Feature Branch**: Create from `develop` branch
-2. **Comprehensive Testing**: Unit, integration, and E2E tests
-3. **Documentation Update**: Update README and API docs
-4. **Code Review**: At least two approvals required
-5. **Automated Checks**: All CI/CD checks must pass
+1. **Feature Branch**: Create from main branch with descriptive name
+2. **Comprehensive Testing**: Ensure all tests pass and add new tests
+3. **Documentation Update**: Update README and API documentation
+4. **Changelog Update**: Document changes following semantic versioning
+
+## 🔮 Future Enhancements & Roadmap
+
+The following features are planned or could be contributed by the community:
+
+### 🚀 **Infrastructure & DevOps**
+
+- **Docker Support**: Multi-stage build containers for deployment
+- **Redis Caching**: Distributed caching for improved performance
+- **Load Balancing**: Multi-instance deployment support
+- **CI/CD Pipeline**: Automated testing and deployment workflows
+
+### 📊 **Monitoring & Observability**
+
+- **Request Correlation**: Unique request ID tracking across services
+- **Metrics Collection**: Prometheus/Grafana integration
+- **Error Tracking**: Sentry or similar error monitoring service
+- **Performance APM**: Application performance monitoring
+
+### 🔒 **Advanced Security**
+
+- **OAuth Provider Expansion**: Additional OAuth providers (GitHub, Microsoft)
+- **2FA Implementation**: Two-factor authentication support
+- **API Key Management**: Service-to-service authentication
+- **Audit Logging**: Comprehensive audit trail for compliance
+
+### 🌐 **API Enhancements**
+
+- **GraphQL Support**: Alternative query interface
+- **WebSocket Integration**: Real-time notifications
+- **API Versioning**: Versioned API endpoints for backward compatibility
+- **Bulk Operations**: Batch processing for large datasets
+
+### 📱 **Platform Features**
+
+- **Email Notifications**: Automated email system for user events
+- **File Upload**: Avatar and document upload capabilities
+- **Search & Filtering**: Advanced search across all entities
+- **Data Export**: CSV/JSON export functionality
+
+### 🧪 **Development Tools**
+
+- **API Client Generation**: Auto-generated SDKs for different languages
+- **Development Seed Data**: Comprehensive seed data for development
+- **Performance Testing**: Load testing and benchmarking tools
+- **Code Quality Metrics**: SonarQube integration for technical debt tracking
+
+**Want to contribute?** Check our contribution guidelines and pick an enhancement that interests you!
 
 ## 📄 License
 
-This project is licensed under the **ISC License** - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the **ISC License**.
 
 ---
 
 <div align="center">
 
-**Built with ❤️ by the BuddyPass Team**
+**Built with ❤️ by Van Goeth and contributors**
 
 _Enterprise-grade backend architecture for the modern subscription economy_
 
