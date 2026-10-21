@@ -1,320 +1,279 @@
-/**
- * User Service Implementation
- */
-
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import {
   IUserService,
   IUserRepository,
   RegisterRequest,
-  RegisterResponse,
   LoginRequest,
-  LoginResponse,
-  LogoutResponse,
-  GoogleOAuthUser,
+  GoogleProfile,
   User,
   TokenPayload,
   UserResponse,
-  GetProfileResponse,
   UpdateProfileRequest,
-  UpdateProfileResponse,
   ChangePasswordRequest,
-  ChangePasswordResponse,
   UserRole,
   CreateAdminRequest,
-  CreateAdminResponse,
+  AuthSession,
 } from "../../types/users";
-import { authConfig } from "../../config/auth";
+import {
+  accessTokenSignOptions,
+  ACCESS_TOKEN_AUDIENCE,
+  ACCESS_TOKEN_ISSUER,
+  authConfig,
+} from "../../config/auth";
+import { env } from "../../config/env";
+import { durationToMs } from "../../utils/duration";
+import {
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+  UnauthorizedError,
+  ValidationError,
+} from "../../utils/errors";
+import {
+  generateRefreshToken,
+  hashRefreshToken,
+  PrismaRefreshTokenRepository,
+} from "../../repositories/users/refreshTokens";
+import { PrismaClient } from "@prisma/client";
 
 export class UserService implements IUserService {
-  constructor(private userRepository: IUserRepository) {}
+  private refreshTokens: PrismaRefreshTokenRepository;
 
-  async register(data: RegisterRequest): Promise<RegisterResponse> {
-    try {
-      // Check if user already exists
-      const existingUser = await this.userRepository.findByEmail(data.email);
-      if (existingUser) {
-        return {
-          success: false,
-          message: "User with this email already exists",
-          data: {
-            user: {} as UserResponse,
-            accessToken: "",
-          },
-        };
-      }
-
-      // Hash password
-      const hashedPassword = await this.hashPassword(data.password);
-
-      // Create user
-      const user = await this.userRepository.create({
-        email: data.email,
-        password: hashedPassword,
-        name: data.name,
-        provider: "local",
-      });
-
-      // Generate access token
-      const accessToken = this.generateAccessToken({
-        userId: user.id,
-        email: user.email,
-        role: user.role,
-      });
-
-      // Convert to response format
-      const userResponse = this.toUserResponse(user);
-
-      return {
-        success: true,
-        message: "User registered successfully",
-        data: {
-          user: userResponse,
-          accessToken,
-        },
-      };
-    } catch (error) {
-      throw new Error("Registration failed");
-    }
+  constructor(
+    private userRepository: IUserRepository,
+    prisma: PrismaClient
+  ) {
+    this.refreshTokens = new PrismaRefreshTokenRepository(prisma);
   }
 
-  async login(data: LoginRequest): Promise<LoginResponse> {
-    try {
-      // Find user
-      const user = await this.userRepository.findByEmail(data.email);
-      if (!user || !user.password) {
-        return {
-          success: false,
-          message: "Invalid email or password",
-          data: {
-            user: {} as UserResponse,
-            accessToken: "",
-          },
-        };
-      }
-
-      // Verify password
-      const isPasswordValid = await this.comparePassword(
-        data.password,
-        user.password
+  async register(data: RegisterRequest): Promise<AuthSession> {
+    const existingUser = await this.userRepository.findByEmail(data.email);
+    if (existingUser) {
+      throw new ConflictError(
+        "User with this email already exists",
+        "EMAIL_EXISTS"
       );
-      if (!isPasswordValid) {
-        return {
-          success: false,
-          message: "Invalid email or password",
-          data: {
-            user: {} as UserResponse,
-            accessToken: "",
-          },
-        };
-      }
+    }
 
-      // Generate access token
-      const accessToken = this.generateAccessToken({
-        userId: user.id,
-        email: user.email,
-        role: user.role,
-      });
+    const user = await this.userRepository.create({
+      email: data.email,
+      password: await this.hashPassword(data.password),
+      name: data.name,
+      provider: "local",
+    });
 
-      // Convert to response format
-      const userResponse = this.toUserResponse(user);
+    return this.issueSession(user);
+  }
 
-      return {
-        success: true,
-        message: "Login successful",
-        data: {
-          user: userResponse,
-          accessToken,
-        },
-      };
-    } catch (error) {
-      throw new Error("Login failed");
+  async login(data: LoginRequest): Promise<AuthSession> {
+    const user = await this.userRepository.findByEmail(data.email);
+    if (!user || !user.password) {
+      throw new UnauthorizedError(
+        "Invalid email or password",
+        "INVALID_CREDENTIALS"
+      );
+    }
+
+    const isPasswordValid = await this.comparePassword(
+      data.password,
+      user.password
+    );
+    if (!isPasswordValid) {
+      throw new UnauthorizedError(
+        "Invalid email or password",
+        "INVALID_CREDENTIALS"
+      );
+    }
+
+    if (!user.isActive) {
+      throw new ForbiddenError(
+        "User account is deactivated",
+        "USER_INACTIVE"
+      );
+    }
+
+    const updated = await this.userRepository.updateProfile(user.id, {
+      lastLoginAt: new Date(),
+    });
+    return this.issueSession(updated);
+  }
+
+  async refresh(refreshToken: string): Promise<AuthSession> {
+    const existing = await this.refreshTokens.findByHash(
+      hashRefreshToken(refreshToken)
+    );
+    if (!existing) {
+      throw new UnauthorizedError(
+        "Refresh token is invalid",
+        "INVALID_REFRESH_TOKEN"
+      );
+    }
+
+    if (existing.revokedAt) {
+      await this.refreshTokens.revokeFamily(existing.familyId);
+      throw new UnauthorizedError(
+        "Refresh token reuse detected",
+        "REFRESH_TOKEN_REUSE"
+      );
+    }
+
+    if (existing.expiresAt.getTime() <= Date.now()) {
+      throw new UnauthorizedError(
+        "Refresh token is expired",
+        "REFRESH_TOKEN_EXPIRED"
+      );
+    }
+
+    const user = await this.userRepository.findById(existing.userId);
+    if (!user || !user.isActive) {
+      throw new ForbiddenError("User account is deactivated", "USER_INACTIVE");
+    }
+
+    await this.refreshTokens.revoke(existing.id);
+    const session = await this.issueSession(user, existing.familyId);
+    return session;
+  }
+
+  async logout(refreshToken: string): Promise<void> {
+    const existing = await this.refreshTokens.findByHash(
+      hashRefreshToken(refreshToken)
+    );
+    if (existing && !existing.revokedAt) {
+      await this.refreshTokens.revoke(existing.id);
     }
   }
 
-  async logout(): Promise<LogoutResponse> {
-    // For JWT-based auth, logout is primarily client-side
-    return {
-      success: true,
-      message: "Logout successful",
-    };
-  }
-
-  async getProfile(userId: string): Promise<GetProfileResponse> {
-    try {
-      const user = await this.userRepository.findById(userId);
-
-      if (!user) {
-        return {
-          success: false,
-          message: "User not found",
-        };
-      }
-
-      const userResponse = this.toUserResponse(user);
-
-      return {
-        success: true,
-        data: {
-          user: userResponse,
-        },
-      };
-    } catch (error) {
-      throw new Error("Failed to get user profile");
+  async getProfile(userId: string): Promise<UserResponse> {
+    const user = await this.userRepository.findById(userId);
+    if (!user) {
+      throw new NotFoundError("User not found", "USER_NOT_FOUND");
     }
+    return this.toUserResponse(user);
   }
 
   async updateProfile(
     userId: string,
     data: UpdateProfileRequest
-  ): Promise<UpdateProfileResponse> {
-    try {
-      const user = await this.userRepository.findById(userId);
-
-      if (!user) {
-        return {
-          success: false,
-          message: "User not found",
-        };
-      }
-
-      // Update user with provided data
-      const updatedUser = await this.userRepository.update(userId, {
-        name: data.name !== undefined ? data.name : user.name,
-        avatar: data.avatar !== undefined ? data.avatar : user.avatar,
-      });
-
-      const userResponse = this.toUserResponse(updatedUser);
-
-      return {
-        success: true,
-        message: "Profile updated successfully",
-        data: {
-          user: userResponse,
-        },
-      };
-    } catch (error) {
-      throw new Error("Failed to update user profile");
+  ): Promise<UserResponse> {
+    const user = await this.userRepository.findById(userId);
+    if (!user) {
+      throw new NotFoundError("User not found", "USER_NOT_FOUND");
     }
+
+    const updatedUser = await this.userRepository.updateProfile(userId, {
+      name: data.name !== undefined ? data.name : user.name,
+      avatar: data.avatar !== undefined ? data.avatar : user.avatar,
+    });
+    return this.toUserResponse(updatedUser);
   }
 
   async changePassword(
     userId: string,
     data: ChangePasswordRequest
-  ): Promise<ChangePasswordResponse> {
-    try {
-      const user = await this.userRepository.findById(userId);
+  ): Promise<void> {
+    const user = await this.userRepository.findById(userId);
+    if (!user || !user.password) {
+      throw new ValidationError("Cannot change password for OAuth users");
+    }
 
-      if (!user || !user.password) {
-        return {
-          success: false,
-          message: "Cannot change password for OAuth users",
-        };
-      }
-
-      // Verify current password
-      const isCurrentPasswordValid = await this.comparePassword(
-        data.currentPassword,
-        user.password
+    const isCurrentPasswordValid = await this.comparePassword(
+      data.currentPassword,
+      user.password
+    );
+    if (!isCurrentPasswordValid) {
+      throw new UnauthorizedError(
+        "Current password is incorrect",
+        "INVALID_CREDENTIALS"
       );
-
-      if (!isCurrentPasswordValid) {
-        return {
-          success: false,
-          message: "Current password is incorrect",
-        };
-      }
-
-      // Hash new password
-      const hashedNewPassword = await this.hashPassword(data.newPassword);
-
-      // Update password
-      await this.userRepository.update(userId, {
-        password: hashedNewPassword,
-      });
-
-      return {
-        success: true,
-        message: "Password changed successfully",
-      };
-    } catch (error) {
-      throw new Error("Failed to change password");
     }
+
+    await this.userRepository.updateProfile(userId, {
+      password: await this.hashPassword(data.newPassword),
+    });
   }
 
-  async handleGoogleOAuth(googleUser: GoogleOAuthUser): Promise<User> {
-    try {
-      // Check if user exists by Google ID
-      let user = await this.userRepository.findByGoogleId(googleUser.googleId);
-
-      if (!user) {
-        // Check if user exists by email
-        user = await this.userRepository.findByEmail(googleUser.email);
-
-        if (user) {
-          // Update existing user with Google ID
-          user = await this.userRepository.update(user.id, {
-            name: googleUser.name || user.name,
-            avatar: googleUser.avatar || user.avatar,
-          });
-        } else {
-          // Create new user
-          user = await this.userRepository.create({
-            email: googleUser.email,
-            name: googleUser.name,
-            googleId: googleUser.googleId,
-            provider: "google",
-            avatar: googleUser.avatar,
-          });
-        }
+  async handleGoogleOAuth(profile: GoogleProfile): Promise<User> {
+    const byGoogleId = await this.userRepository.findByGoogleId(profile.googleId);
+    if (byGoogleId) {
+      if (!byGoogleId.isActive) {
+        throw new ForbiddenError("User account is deactivated", "USER_INACTIVE");
       }
-
-      return user;
-    } catch (error) {
-      throw new Error("Google OAuth handling failed");
+      return this.userRepository.updateProfile(byGoogleId.id, {
+        name: profile.name || byGoogleId.name,
+        avatar: profile.avatar || byGoogleId.avatar,
+        lastLoginAt: new Date(),
+      });
     }
+
+    const byEmail = await this.userRepository.findByEmail(profile.email);
+    if (byEmail) {
+      if (!byEmail.isVerified) {
+        throw new ConflictError(
+          "An account with this email exists but is not verified. Log in and link Google from settings.",
+          "GOOGLE_LINK_UNVERIFIED"
+        );
+      }
+      if (!byEmail.isActive) {
+        throw new ForbiddenError("User account is deactivated", "USER_INACTIVE");
+      }
+      return this.userRepository.updateProfile(byEmail.id, {
+        googleId: profile.googleId,
+        name: profile.name || byEmail.name,
+        avatar: profile.avatar || byEmail.avatar,
+        lastLoginAt: new Date(),
+      });
+    }
+
+    return this.userRepository.create({
+      email: profile.email,
+      name: profile.name,
+      googleId: profile.googleId,
+      provider: "google",
+      avatar: profile.avatar,
+      isVerified: true,
+    });
   }
 
-  async createAdmin(data: CreateAdminRequest): Promise<CreateAdminResponse> {
-    try {
-      // Check if user already exists
-      const existingUser = await this.userRepository.findByEmail(data.email);
-      if (existingUser) {
-        return {
-          success: false,
-          message: "User with this email already exists",
-          data: {
-            user: {} as UserResponse,
-          },
-        };
-      }
-
-      // Hash password
-      const hashedPassword = await this.hashPassword(data.password);
-
-      // Create admin user
-      const user = await this.userRepository.create({
-        email: data.email,
-        password: hashedPassword,
-        name: data.name,
-        provider: "local",
-        role: UserRole.ADMIN,
-      });
-
-      // Convert to response format
-      const userResponse = this.toUserResponse(user);
-
-      return {
-        success: true,
-        message: "Admin user created successfully",
-        data: {
-          user: userResponse,
-        },
-      };
-    } catch (error) {
-      throw new Error("Admin creation failed");
+  async createAdmin(data: CreateAdminRequest): Promise<UserResponse> {
+    const existingUser = await this.userRepository.findByEmail(data.email);
+    if (existingUser) {
+      throw new ConflictError(
+        "User with this email already exists",
+        "EMAIL_EXISTS"
+      );
     }
+
+    const user = await this.userRepository.create({
+      email: data.email,
+      password: await this.hashPassword(data.password),
+      name: data.name,
+      provider: "local",
+      role: UserRole.ADMIN,
+      isVerified: true,
+    });
+    return this.toUserResponse(user);
+  }
+
+  async issueSession(user: User, familyId?: string): Promise<AuthSession> {
+    const accessToken = this.generateAccessToken({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+    });
+    const refreshToken = generateRefreshToken();
+    await this.refreshTokens.create({
+      tokenHash: hashRefreshToken(refreshToken),
+      familyId: familyId ?? this.refreshTokens.newFamilyId(),
+      userId: user.id,
+      expiresAt: new Date(Date.now() + durationToMs(env.JWT_REFRESH_EXPIRES_IN)),
+    });
+
+    return {
+      user: this.toUserResponse(user),
+      accessToken,
+      refreshToken,
+    };
   }
 
   async hashPassword(password: string): Promise<string> {
@@ -326,14 +285,16 @@ export class UserService implements IUserService {
   }
 
   generateAccessToken(payload: TokenPayload): string {
-    return jwt.sign(payload, authConfig.jwt.secret, {
-      expiresIn: authConfig.jwt.expiresIn,
-    } as jwt.SignOptions);
+    return jwt.sign(payload, authConfig.jwt.secret, accessTokenSignOptions);
   }
 
   verifyAccessToken(token: string): TokenPayload | null {
     try {
-      return jwt.verify(token, authConfig.jwt.secret) as TokenPayload;
+      return jwt.verify(token, authConfig.jwt.secret, {
+        algorithms: ["HS256"],
+        issuer: ACCESS_TOKEN_ISSUER,
+        audience: ACCESS_TOKEN_AUDIENCE,
+      }) as TokenPayload;
     } catch {
       return null;
     }
@@ -347,15 +308,17 @@ export class UserService implements IUserService {
       avatar: user.avatar,
       provider: user.provider,
       role: user.role,
+      isVerified: user.isVerified,
+      isActive: user.isActive,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
   }
 }
 
-// Export a factory function to create service instance
 export const createUserService = (
-  userRepository: IUserRepository
+  userRepository: IUserRepository,
+  prisma: PrismaClient
 ): IUserService => {
-  return new UserService(userRepository);
+  return new UserService(userRepository, prisma);
 };

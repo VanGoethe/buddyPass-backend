@@ -3,13 +3,14 @@ import cors from "cors";
 import helmet from "helmet";
 import passport from "./config/passport";
 import { errorHandler } from "./middleware/errorHandler";
+import { requestLogger } from "./middleware/requestLogger";
+import { globalRateLimiter } from "./middleware/rateLimit";
 import routes from "./routes";
 import swaggerUi from "swagger-ui-express";
 import swaggerSpec from "./config/swagger";
+import { env } from "./config/env";
+import { getPrismaClient } from "./config/database";
 
-/**
- * Express application setup
- */
 class App {
   public app: express.Application;
 
@@ -21,68 +22,39 @@ class App {
   }
 
   private initializeMiddlewares(): void {
-    // Security middleware
-    this.app.use(helmet());
+    if (env.TRUST_PROXY) {
+      this.app.set("trust proxy", 1);
+    }
 
-    // CORS middleware
+    this.app.use(helmet());
     this.app.use(
       cors({
-        origin: process.env.CORS_ORIGIN || "http://localhost:3000",
+        origin: env.CORS_ORIGIN,
         credentials: true,
       })
     );
-
-    // Body parsing middleware
-    this.app.use(express.json());
-    this.app.use(express.urlencoded({ extended: true }));
-
-    // JSON parsing error handler
-    this.app.use(
-      (
-        error: any,
-        req: express.Request,
-        res: express.Response,
-        next: express.NextFunction
-      ) => {
-        if (error instanceof SyntaxError && error.message.includes("JSON")) {
-          console.error("JSON parsing failed for request:", {
-            method: req.method,
-            url: req.url,
-            error: error.message,
-          });
-
-          return res.status(400).json({
-            success: false,
-            error: {
-              code: "INVALID_JSON",
-              message: "Invalid JSON format in request body",
-              details:
-                process.env.NODE_ENV === "development"
-                  ? {
-                      originalError: error.message,
-                      tip: "Check for trailing commas, unescaped quotes, or other JSON syntax errors",
-                    }
-                  : undefined,
-            },
-          });
-        }
-        next(error);
-      }
-    );
-
-    // Passport middleware
+    this.app.use(express.json({ limit: "100kb" }));
+    this.app.use(express.urlencoded({ extended: true, limit: "100kb" }));
+    this.app.use(requestLogger);
     this.app.use(passport.initialize());
   }
 
   private initializeRoutes(): void {
-    // Health check endpoint
-    this.app.get("/health", (req, res) => {
-      res
-        .status(200)
-        .json({ status: "OK", timestamp: new Date().toISOString() });
+    this.app.get("/health", async (_req, res) => {
+      try {
+        await getPrismaClient().$queryRaw`SELECT 1`;
+        res.status(200).json({
+          status: "OK",
+          timestamp: new Date().toISOString(),
+        });
+      } catch {
+        res.status(503).json({
+          status: "UNAVAILABLE",
+          timestamp: new Date().toISOString(),
+        });
+      }
     });
 
-    // Swagger API Documentation
     this.app.use(
       "/api-docs",
       swaggerUi.serve,
@@ -93,23 +65,14 @@ class App {
         .swagger-ui .info .title { color: #3b82f6 }
       `,
         customSiteTitle: "BuddyPass API Documentation",
-        customfavIcon: "/favicon.ico",
         swaggerOptions: {
           docExpansion: "none",
-          defaultModelRendering: "model",
-          defaultModelsExpandDepth: 2,
-          defaultModelExpandDepth: 2,
-          displayRequestDuration: true,
-          filter: true,
-          showExtensions: true,
-          showCommonExtensions: true,
-          tryItOutEnabled: true,
+          tryItOutEnabled: env.NODE_ENV !== "production",
         },
       })
     );
 
-    // API routes
-    this.app.use("/api", routes);
+    this.app.use("/api", globalRateLimiter, routes);
   }
 
   private initializeErrorHandling(): void {

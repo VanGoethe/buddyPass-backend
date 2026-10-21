@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,35 +7,9 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id          String   @id @default(cuid())
-  email       String   @unique
-  name        String?
-  password    String?  // Optional for OAuth users
-  avatar      String?
-  
-  // OAuth fields
-  googleId    String?  @unique
-  provider    String?  // 'local' | 'google'
-  
-  // Role-based access control
-  role        UserRole @default(USER)
-  
-  // Account status
-  isVerified  Boolean  @default(false)
-  isActive    Boolean  @default(true)
-  
-  // Timestamps
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  lastLoginAt DateTime?
-  
-  // Relations
-  refreshTokens RefreshToken[]
-  subscriptionSlots SubscriptionSlot[]
-  subscriptionRequests SubscriptionRequest[]
-  
-  @@map("users")
+enum AuthProvider {
+  local
+  google
 }
 
 enum UserRole {
@@ -46,28 +17,53 @@ enum UserRole {
   ADMIN
 }
 
+model User {
+  id          String        @id @default(cuid())
+  email       String        @unique
+  name        String?
+  password    String?
+  avatar      String?
+  googleId    String?       @unique
+  provider    AuthProvider?
+  role        UserRole      @default(USER)
+  isVerified  Boolean       @default(false)
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  lastLoginAt DateTime?
+
+  refreshTokens        RefreshToken[]
+  subscriptionSlots    SubscriptionSlot[]
+  subscriptionRequests SubscriptionRequest[]
+
+  @@map("users")
+}
+
 model RefreshToken {
-  id        String   @id @default(cuid())
-  token     String   @unique
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  familyId  String
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   expiresAt DateTime
-  createdAt DateTime @default(now())
-  
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([familyId])
+  @@index([userId])
   @@map("refresh_tokens")
 }
 
 model Currency {
   id        String   @id @default(cuid())
-  name      String   @unique // Full name (e.g., "US Dollar", "Euro")
-  code      String   @unique // ISO 4217 code (e.g., "USD", "EUR")
-  symbol    String?  // Currency symbol (e.g., "$", "€", "£")
-  minorUnit Int      @default(2) // Number of decimal places (e.g., 2 for USD, 0 for JPY)
+  name      String   @unique
+  code      String   @unique
+  symbol    String?
+  minorUnit Int      @default(2)
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Relations
   countries     Country[]
   subscriptions Subscription[]
 
@@ -75,98 +71,105 @@ model Currency {
 }
 
 model Country {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  code      String   @unique // ISO 3166-1 alpha-2 code (e.g., "US", "CA", "GB")
-  alpha3    String   @unique // ISO 3166-1 alpha-3 code (e.g., "USA", "CAN", "GBR")
-  numericCode String? @unique // ISO 3166-1 numeric code (e.g., "840", "124", "826")
-  continent String?
-  region    String?
-  currencyId String? // Foreign key to Currency
-  phoneCode String?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(cuid())
+  name        String   @unique
+  code        String   @unique
+  alpha3      String   @unique
+  numericCode String?  @unique
+  continent   String?
+  region      String?
+  currencyId  String?
+  phoneCode   String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  // Relations
-  currency         Currency? @relation(fields: [currencyId], references: [id], onDelete: SetNull)
-  serviceProviders ServiceProviderCountry[]
-  subscriptions   Subscription[]
+  currency             Currency?                @relation(fields: [currencyId], references: [id], onDelete: SetNull)
+  serviceProviders     ServiceProviderCountry[]
+  subscriptions        Subscription[]
   subscriptionRequests SubscriptionRequest[]
 
+  @@index([currencyId])
   @@map("countries")
 }
 
 model ServiceProvider {
   id          String   @id @default(cuid())
-  name        String
+  name        String   @unique
   description String?
   metadata    Json?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  
-  // Relations
-  subscriptions Subscription[]
-  supportedCountries ServiceProviderCountry[]
+
+  subscriptions        Subscription[]
+  supportedCountries   ServiceProviderCountry[]
   subscriptionRequests SubscriptionRequest[]
-  
+
   @@map("service_providers")
 }
 
 model ServiceProviderCountry {
-  id                String    @id @default(cuid())
+  id                String   @id @default(cuid())
   serviceProviderId String
   countryId         String
-  createdAt         DateTime  @default(now())
+  createdAt         DateTime @default(now())
 
-  // Relations
   serviceProvider ServiceProvider @relation(fields: [serviceProviderId], references: [id], onDelete: Cascade)
   country         Country         @relation(fields: [countryId], references: [id], onDelete: Cascade)
 
   @@unique([serviceProviderId, countryId])
+  @@index([countryId])
   @@map("service_provider_countries")
 }
 
 model Subscription {
-  id                String    @id @default(cuid())
-  serviceProviderId String
-  countryId         String?
-  name              String
-  email             String
-  passwordHash      String
-  availableSlots    Int
-  expiresAt         DateTime?
-  renewalInfo       Json?
-  userPrice         Decimal?
-  currencyId        String? // Foreign key to Currency instead of string
-  metadata          Json?
-  isActive          Boolean   @default(true)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  
-  // Relations
-  serviceProvider ServiceProvider @relation(fields: [serviceProviderId], references: [id], onDelete: Cascade)
-  country         Country?        @relation(fields: [countryId], references: [id], onDelete: SetNull)
-  currency        Currency?       @relation(fields: [currencyId], references: [id], onDelete: SetNull)
+  id                   String    @id @default(cuid())
+  serviceProviderId    String
+  countryId            String?
+  name                 String
+  email                String
+  passwordCiphertext   String    @default("")
+  passwordIv           String    @default("")
+  passwordTag          String    @default("")
+  keyVersion           Int       @default(1)
+  needsCredentialReset Boolean   @default(false)
+  maxSlots             Int
+  expiresAt            DateTime?
+  renewalInfo          Json?
+  userPrice            Decimal?
+  currencyId           String?
+  metadata             Json?
+  isActive             Boolean   @default(true)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  serviceProvider   ServiceProvider    @relation(fields: [serviceProviderId], references: [id], onDelete: Cascade)
+  country           Country?           @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  currency          Currency?          @relation(fields: [currencyId], references: [id], onDelete: SetNull)
   subscriptionSlots SubscriptionSlot[]
-  
+
+  @@index([serviceProviderId, countryId, isActive])
+  @@index([currencyId])
   @@map("subscriptions")
 }
 
 model SubscriptionSlot {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   userId         String
   subscriptionId String
-  assignedAt     DateTime @default(now())
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  
-  // Relations
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-  
+  assignedAt     DateTime  @default(now())
+  isActive       Boolean   @default(true)
+  releasedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user            User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription    Subscription          @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  assignedRequest SubscriptionRequest?
+
   @@unique([userId, subscriptionId])
+  @@index([subscriptionId, isActive])
+  @@index([userId])
   @@map("subscription_slots")
 }
 
@@ -183,17 +186,19 @@ model SubscriptionRequest {
   serviceProviderId String
   countryId         String?
   status            SubscriptionRequestStatus @default(PENDING)
-  assignedSlotId    String?                   // Reference to SubscriptionSlot if assigned
+  assignedSlotId    String?                   @unique
   requestedAt       DateTime                  @default(now())
   processedAt       DateTime?
   metadata          Json?
   createdAt         DateTime                  @default(now())
   updatedAt         DateTime                  @updatedAt
-  
-  // Relations
-  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  serviceProvider ServiceProvider @relation(fields: [serviceProviderId], references: [id], onDelete: Cascade)
-  country         Country?        @relation(fields: [countryId], references: [id], onDelete: SetNull)
-  
+
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  serviceProvider ServiceProvider   @relation(fields: [serviceProviderId], references: [id], onDelete: Cascade)
+  country         Country?          @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  assignedSlot    SubscriptionSlot? @relation(fields: [assignedSlotId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([serviceProviderId, countryId, status])
   @@map("subscription_requests")
-} 
+}

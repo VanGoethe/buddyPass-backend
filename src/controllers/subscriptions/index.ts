@@ -1,745 +1,198 @@
-/**
- * Subscription Controller Implementation
- */
-
-import { Request, Response } from "express";
-import { body, query, param, validationResult } from "express-validator";
+import { NextFunction, Request, Response } from "express";
 import { ISubscriptionService } from "../../types/subscriptions";
+import { UserRole } from "../../types/users";
+import { sendSuccess } from "../../utils/http";
+import { UnauthorizedError } from "../../utils/errors";
 
 export class SubscriptionController {
   constructor(private subscriptionService: ISubscriptionService) {}
 
-  /**
-   * Validation rules for creating a subscription
-   */
-  static createValidation = [
-    body("serviceProviderId")
-      .notEmpty()
-      .withMessage("Service provider ID is required"),
-    body("name")
-      .notEmpty()
-      .withMessage("Name is required")
-      .isLength({ max: 100 })
-      .withMessage("Name must be 100 characters or less")
-      .trim(),
-    body("email")
-      .notEmpty()
-      .withMessage("Email is required")
-      .isEmail()
-      .withMessage("Invalid email format")
-      .normalizeEmail(),
-    body("password")
-      .notEmpty()
-      .withMessage("Password is required")
-      .isLength({ min: 6 })
-      .withMessage("Password must be at least 6 characters long"),
-    body("availableSlots")
-      .isInt({ min: 1, max: 100 })
-      .withMessage("Available slots must be between 1 and 100"),
-    body("countryId")
-      .optional()
-      .isLength({ max: 50 })
-      .withMessage("Country must be 50 characters or less")
-      .trim(),
-    body("expiresAt")
-      .optional()
-      .isISO8601()
-      .withMessage("Expires at must be a valid date")
-      .custom((value) => {
-        if (value && new Date(value) <= new Date()) {
-          throw new Error("Expiration date must be in the future");
-        }
-        return true;
-      }),
-    body("renewalInfo")
-      .optional()
-      .custom((value) => {
-        if (value && typeof value !== "object") {
-          throw new Error("Renewal info must be a valid JSON object");
-        }
-        return true;
-      }),
-    body("userPrice")
-      .optional()
-      .isFloat({ min: 0 })
-      .withMessage("User price must be a positive number"),
-    body("currency")
-      .optional()
-      .isLength({ min: 3, max: 3 })
-      .withMessage("Currency must be a 3-letter code"),
-    body("metadata")
-      .optional()
-      .custom((value) => {
-        if (value && typeof value !== "object") {
-          throw new Error("Metadata must be a valid JSON object");
-        }
-        return true;
-      }),
-    body("isActive")
-      .optional()
-      .isBoolean()
-      .withMessage("isActive must be a boolean"),
-  ];
-
-  /**
-   * Validation rules for updating a subscription
-   */
-  static updateValidation = [
-    param("id").notEmpty().withMessage("Subscription ID is required"),
-    body("name")
-      .optional()
-      .notEmpty()
-      .withMessage("Name cannot be empty")
-      .isLength({ max: 100 })
-      .withMessage("Name must be 100 characters or less")
-      .trim(),
-    body("email")
-      .optional()
-      .notEmpty()
-      .withMessage("Email cannot be empty")
-      .isEmail()
-      .withMessage("Invalid email format")
-      .normalizeEmail(),
-    body("password")
-      .optional()
-      .notEmpty()
-      .withMessage("Password cannot be empty")
-      .isLength({ min: 6 })
-      .withMessage("Password must be at least 6 characters long"),
-    body("availableSlots")
-      .optional()
-      .isInt({ min: 1, max: 100 })
-      .withMessage("Available slots must be between 1 and 100"),
-    body("countryId")
-      .optional()
-      .isLength({ max: 50 })
-      .withMessage("Country must be 50 characters or less")
-      .trim(),
-    body("expiresAt")
-      .optional()
-      .isISO8601()
-      .withMessage("Expires at must be a valid date")
-      .custom((value) => {
-        if (value && new Date(value) <= new Date()) {
-          throw new Error("Expiration date must be in the future");
-        }
-        return true;
-      }),
-    body("renewalInfo")
-      .optional()
-      .custom((value) => {
-        if (value && typeof value !== "object") {
-          throw new Error("Renewal info must be a valid JSON object");
-        }
-        return true;
-      }),
-    body("userPrice")
-      .optional()
-      .isFloat({ min: 0 })
-      .withMessage("User price must be a positive number"),
-    body("currency")
-      .optional()
-      .isLength({ min: 3, max: 3 })
-      .withMessage("Currency must be a 3-letter code"),
-    body("metadata")
-      .optional()
-      .custom((value) => {
-        if (value && typeof value !== "object") {
-          throw new Error("Metadata must be a valid JSON object");
-        }
-        return true;
-      }),
-    body("isActive")
-      .optional()
-      .isBoolean()
-      .withMessage("isActive must be a boolean"),
-  ];
-
-  /**
-   * Validation rules for getting subscriptions
-   */
-  static getListValidation = [
-    query("page")
-      .optional()
-      .isInt({ min: 1 })
-      .withMessage("Page must be a positive integer"),
-    query("limit")
-      .optional()
-      .isInt({ min: 1, max: 100 })
-      .withMessage("Limit must be between 1 and 100"),
-    query("sortBy")
-      .optional()
-      .isIn([
-        "name",
-        "email",
-        "availableSlots",
-        "expiresAt",
-        "createdAt",
-        "updatedAt",
-      ])
-      .withMessage(
-        "sortBy must be one of: name, email, availableSlots, expiresAt, createdAt, updatedAt"
-      ),
-    query("sortOrder")
-      .optional()
-      .isIn(["asc", "desc"])
-      .withMessage("sortOrder must be either asc or desc"),
-    query("search")
-      .optional()
-      .isLength({ max: 100 })
-      .withMessage("Search term must be 100 characters or less")
-      .trim(),
-    query("serviceProviderId")
-      .optional()
-      .notEmpty()
-      .withMessage("Service provider ID cannot be empty"),
-    query("isActive")
-      .optional()
-      .isBoolean()
-      .withMessage("isActive must be a boolean"),
-    query("countryId")
-      .optional()
-      .isLength({ max: 50 })
-      .withMessage("Country must be 50 characters or less"),
-  ];
-
-  /**
-   * Validation rules for getting a single subscription
-   */
-  static getByIdValidation = [
-    param("id").notEmpty().withMessage("Subscription ID is required"),
-  ];
-
-  /**
-   * Validation rules for deleting a subscription
-   */
-  static deleteValidation = [
-    param("id").notEmpty().withMessage("Subscription ID is required"),
-  ];
-
-  /**
-   * Validation rules for getting subscriptions by service provider
-   */
-  static getByServiceProviderValidation = [
-    param("serviceProviderId")
-      .notEmpty()
-      .withMessage("Service provider ID is required"),
-  ];
-
-  /**
-   * Create a new subscription
-   */
-  async createSubscription(req: Request, res: Response): Promise<void> {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "Invalid input data",
-            details: errors.array(),
-          },
-        });
-        return;
-      }
-
-      const {
-        serviceProviderId,
-        name,
-        email,
-        password,
-        availableSlots,
-        countryId,
-        expiresAt,
-        renewalInfo,
-        userPrice,
-        currency,
-        metadata,
-        isActive,
-      } = req.body;
-
-      const subscription = await this.subscriptionService.createSubscription({
-        serviceProviderId,
-        name,
-        email,
-        password,
-        availableSlots,
-        countryId,
-        expiresAt: expiresAt ? new Date(expiresAt) : undefined,
-        renewalInfo,
-        userPrice,
-        currencyId: currency,
-        metadata,
-        isActive,
-      });
-
-      res.status(201).json({
-        success: true,
-        data: subscription,
-        message: "Subscription created successfully",
-      });
-    } catch (error: any) {
-      if (error.message.includes("already exists")) {
-        res.status(409).json({
-          success: false,
-          error: {
-            code: "CONFLICT",
-            message: error.message,
-          },
-        });
-      } else if (error.message === "Service provider not found") {
-        res.status(404).json({
-          success: false,
-          error: {
-            code: "NOT_FOUND",
-            message: error.message,
-          },
-        });
-      } else {
-        res.status(500).json({
-          success: false,
-          error: {
-            code: "INTERNAL_ERROR",
-            message: "Failed to create subscription",
-          },
-        });
-      }
-    }
-  }
-
-  /**
-   * Get a subscription by ID
-   */
-  async getSubscriptionById(req: Request, res: Response): Promise<void> {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "Invalid input data",
-            details: errors.array(),
-          },
-        });
-        return;
-      }
-
-      const { id } = req.params;
-
-      const subscription = await this.subscriptionService.getSubscriptionById(
-        id
-      );
-
-      res.status(200).json({
-        success: true,
-        data: subscription,
-      });
-    } catch (error: any) {
-      if (error.message === "Subscription not found") {
-        res.status(404).json({
-          success: false,
-          error: {
-            code: "NOT_FOUND",
-            message: error.message,
-          },
-        });
-      } else {
-        res.status(500).json({
-          success: false,
-          error: {
-            code: "INTERNAL_ERROR",
-            message: "Failed to get subscription",
-          },
-        });
-      }
-    }
-  }
-
-  /**
-   * Get list of subscriptions with pagination and filtering
-   */
-  async getSubscriptions(req: Request, res: Response): Promise<void> {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "Invalid query parameters",
-            details: errors.array(),
-          },
-        });
-        return;
-      }
-
-      const {
-        page = 1,
-        limit = 10,
-        sortBy = "createdAt",
-        sortOrder = "desc",
-        search,
-        serviceProviderId,
-        isActive,
-        countryId,
-      } = req.query;
-
-      const result = await this.subscriptionService.getSubscriptions({
-        page: page ? parseInt(page as string) : 1,
-        limit: limit ? parseInt(limit as string) : 10,
-        sortBy: sortBy as any,
-        sortOrder: sortOrder as "asc" | "desc",
-        search: search as string,
-        serviceProviderId: serviceProviderId as string,
-        isActive: isActive ? isActive === "true" : undefined,
-        countryId: countryId as string,
-      });
-
-      res.status(200).json({
-        success: true,
-        data: result,
-      });
-    } catch (error: any) {
-      res.status(500).json({
-        success: false,
-        error: {
-          code: "INTERNAL_ERROR",
-          message: "Failed to get subscriptions",
-        },
-      });
-    }
-  }
-
-  /**
-   * Update a subscription
-   */
-  async updateSubscription(req: Request, res: Response): Promise<void> {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "Invalid input data",
-            details: errors.array(),
-          },
-        });
-        return;
-      }
-
-      const { id } = req.params;
-      const {
-        name,
-        email,
-        password,
-        availableSlots,
-        countryId,
-        expiresAt,
-        renewalInfo,
-        userPrice,
-        currency,
-        metadata,
-        isActive,
-      } = req.body;
-
-      const subscription = await this.subscriptionService.updateSubscription(
-        id,
-        {
-          name,
-          email,
-          password,
-          availableSlots,
-          countryId,
-          expiresAt: expiresAt ? new Date(expiresAt) : undefined,
-          renewalInfo,
-          userPrice,
-          currencyId: currency,
-          metadata,
-          isActive,
-        }
-      );
-
-      res.status(200).json({
-        success: true,
-        data: subscription,
-        message: "Subscription updated successfully",
-      });
-    } catch (error: any) {
-      if (error.message === "Subscription not found") {
-        res.status(404).json({
-          success: false,
-          error: {
-            code: "NOT_FOUND",
-            message: error.message,
-          },
-        });
-      } else if (error.message.includes("already exists")) {
-        res.status(409).json({
-          success: false,
-          error: {
-            code: "CONFLICT",
-            message: error.message,
-          },
-        });
-      } else {
-        res.status(500).json({
-          success: false,
-          error: {
-            code: "INTERNAL_ERROR",
-            message: "Failed to update subscription",
-          },
-        });
-      }
-    }
-  }
-
-  /**
-   * Delete a subscription
-   */
-  async deleteSubscription(req: Request, res: Response): Promise<void> {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "Invalid input data",
-            details: errors.array(),
-          },
-        });
-        return;
-      }
-
-      const { id } = req.params;
-
-      await this.subscriptionService.deleteSubscription(id);
-
-      res.status(200).json({
-        success: true,
-        message: "Subscription deleted successfully",
-      });
-    } catch (error: any) {
-      if (error.message === "Subscription not found") {
-        res.status(404).json({
-          success: false,
-          error: {
-            code: "NOT_FOUND",
-            message: error.message,
-          },
-        });
-      } else {
-        res.status(500).json({
-          success: false,
-          error: {
-            code: "INTERNAL_ERROR",
-            message: "Failed to delete subscription",
-          },
-        });
-      }
-    }
-  }
-
-  /**
-   * Get subscriptions by service provider
-   */
-  async getSubscriptionsByServiceProvider(
+  createSubscription = async (
     req: Request,
-    res: Response
-  ): Promise<void> {
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "Invalid input data",
-            details: errors.array(),
-          },
-        });
-        return;
-      }
+      const body = req.body as {
+        expiresAt?: string;
+        currencyId?: string;
+        currency?: string;
+      };
+      const subscription = await this.subscriptionService.createSubscription({
+        ...req.body,
+        currencyId: body.currencyId ?? body.currency,
+        expiresAt: body.expiresAt ? new Date(body.expiresAt) : undefined,
+      });
+      sendSuccess(res, subscription, "Subscription created successfully", 201);
+    } catch (error) {
+      next(error);
+    }
+  };
 
-      const { serviceProviderId } = req.params;
+  getSubscriptionById = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const subscription = await this.subscriptionService.getSubscriptionById(
+        req.params.id
+      );
+      sendSuccess(res, subscription);
+    } catch (error) {
+      next(error);
+    }
+  };
 
+  getSubscriptions = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const result = await this.subscriptionService.getSubscriptions(req.query);
+      sendSuccess(res, result);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  updateSubscription = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const body = req.body as { expiresAt?: string };
+      const subscription = await this.subscriptionService.updateSubscription(
+        req.params.id,
+        {
+          ...req.body,
+          expiresAt: body.expiresAt ? new Date(body.expiresAt) : undefined,
+        }
+      );
+      sendSuccess(res, subscription, "Subscription updated successfully");
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  deleteSubscription = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      await this.subscriptionService.deleteSubscription(req.params.id);
+      sendSuccess(res, null, "Subscription deleted successfully");
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  getSubscriptionsByServiceProvider = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
       const subscriptions =
         await this.subscriptionService.getSubscriptionsByServiceProvider(
-          serviceProviderId
+          req.params.serviceProviderId
         );
-
-      res.status(200).json({
-        success: true,
-        data: subscriptions,
-      });
-    } catch (error: any) {
-      if (error.message === "Service provider not found") {
-        res.status(404).json({
-          success: false,
-          error: {
-            code: "NOT_FOUND",
-            message: error.message,
-          },
-        });
-      } else {
-        res.status(500).json({
-          success: false,
-          error: {
-            code: "INTERNAL_ERROR",
-            message: "Failed to get subscriptions by service provider",
-          },
-        });
-      }
+      sendSuccess(res, subscriptions);
+    } catch (error) {
+      next(error);
     }
-  }
+  };
 
-  /**
-   * Request a subscription slot
-   */
-  async requestSubscriptionSlot(req: Request, res: Response): Promise<void> {
+  requestSubscriptionSlot = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "Invalid request data",
-            details: errors.array(),
-          },
-        });
-        return;
-      }
-
-      const userId = req.user?.id;
-      if (!userId) {
-        res.status(401).json({
-          success: false,
-          error: {
-            code: "UNAUTHORIZED",
-            message: "User authentication required",
-          },
-        });
-        return;
-      }
-
-      const { serviceProviderId, countryId } = req.body;
-
+      if (!req.user) throw new UnauthorizedError();
       const request = await this.subscriptionService.requestSubscriptionSlot(
-        userId,
-        { serviceProviderId, countryId }
+        req.user.id,
+        req.body
       );
-
-      const statusCode = request.status === "ASSIGNED" ? 200 : 200;
       const message =
         request.status === "ASSIGNED"
           ? "Slot successfully assigned! You now have access to this subscription."
-          : "All subscription slots are currently full, but new subscriptions will be created shortly. Please check back in a few minutes.";
-
-      res.status(statusCode).json({
-        success: true,
-        data: {
-          request,
-        },
-        message,
-      });
-    } catch (error: any) {
-      console.error("Error requesting subscription slot:", error);
-
-      if (error.message.includes("not found")) {
-        res.status(404).json({
-          success: false,
-          error: {
-            code: "NOT_FOUND",
-            message: error.message,
-          },
-        });
-        return;
-      }
-
-      if (
-        error.message.includes("already have") ||
-        error.message.includes("pending request")
-      ) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: "DUPLICATE_REQUEST",
-            message: error.message,
-          },
-        });
-        return;
-      }
-
-      if (error.message.includes("not support")) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: "NOT_SUPPORTED",
-            message: error.message,
-          },
-        });
-        return;
-      }
-
-      res.status(500).json({
-        success: false,
-        error: {
-          code: "INTERNAL_SERVER_ERROR",
-          message: error.message || "Failed to request subscription slot",
-        },
-      });
+          : "All subscription slots are currently full. Your request is queued.";
+      sendSuccess(res, { request }, message);
+    } catch (error) {
+      next(error);
     }
-  }
+  };
 
-  /**
-   * Get user's subscription slots
-   */
-  async getUserSubscriptionSlots(req: Request, res: Response): Promise<void> {
+  getUserSubscriptionSlots = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
-      const userId = req.user?.id;
-      if (!userId) {
-        res.status(401).json({
-          success: false,
-          error: {
-            code: "UNAUTHORIZED",
-            message: "User authentication required",
-          },
-        });
-        return;
-      }
-
+      if (!req.user) throw new UnauthorizedError();
       const slots = await this.subscriptionService.getUserSubscriptionSlots(
-        userId
+        req.user.id
       );
-
-      res.status(200).json({
-        success: true,
-        data: {
-          slots,
-        },
-        message: "User subscription slots retrieved successfully",
-      });
-    } catch (error: any) {
-      console.error("Error fetching user subscription slots:", error);
-
-      res.status(500).json({
-        success: false,
-        error: {
-          code: "INTERNAL_SERVER_ERROR",
-          message: error.message || "Failed to fetch user subscription slots",
-        },
-      });
+      sendSuccess(res, { slots }, "User subscription slots retrieved successfully");
+    } catch (error) {
+      next(error);
     }
-  }
+  };
+
+  listMyRequests = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      if (!req.user) throw new UnauthorizedError();
+      const requests = await this.subscriptionService.listMyRequests(req.user.id);
+      sendSuccess(res, { requests });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  revealCredentials = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      if (!req.user) throw new UnauthorizedError();
+      const credentials = await this.subscriptionService.revealCredentials(
+        req.params.slotId,
+        { id: req.user.id, role: req.user.role as UserRole }
+      );
+      res.set("Cache-Control", "no-store");
+      sendSuccess(res, credentials);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  releaseSlot = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      if (!req.user) throw new UnauthorizedError();
+      await this.subscriptionService.releaseSlot(req.params.slotId, {
+        id: req.user.id,
+        role: req.user.role as UserRole,
+      });
+      sendSuccess(res, null, "Slot released");
+    } catch (error) {
+      next(error);
+    }
+  };
 }
 
-/**
- * Factory function to create Subscription controller
- */
 export function createSubscriptionController(
   subscriptionService: ISubscriptionService
 ): SubscriptionController {

@@ -4,8 +4,7 @@
 
 import { Router } from "express";
 import { container } from "../container";
-import { ServiceProviderController } from "../controllers/serviceProviders";
-import { authenticateJWT, optionalAuth } from "../middleware/auth";
+import { authenticateJWT, requireAdmin, optionalAuth } from "../middleware/auth";
 
 const router = Router();
 const serviceProviderController = container.getServiceProviderController();
@@ -146,8 +145,8 @@ const serviceProviderController = container.getServiceProviderController();
 router.get(
   "/",
   optionalAuth,
-  ServiceProviderController.getListValidation,
-  serviceProviderController.getServiceProviders.bind(serviceProviderController)
+  (req, res, next) =>
+    serviceProviderController.getServiceProviders(req, res, next)
 );
 
 /**
@@ -227,10 +226,8 @@ router.get(
 router.get(
   "/:id",
   optionalAuth,
-  ServiceProviderController.getByIdValidation,
-  serviceProviderController.getServiceProviderById.bind(
-    serviceProviderController
-  )
+  (req, res, next) =>
+    serviceProviderController.getServiceProviderById(req, res, next)
 );
 
 /**
@@ -321,10 +318,9 @@ router.get(
 router.post(
   "/",
   authenticateJWT,
-  ServiceProviderController.createValidation,
-  serviceProviderController.createServiceProvider.bind(
-    serviceProviderController
-  )
+  requireAdmin,
+  (req, res, next) =>
+    serviceProviderController.createServiceProvider(req, res, next)
 );
 
 /**
@@ -415,10 +411,9 @@ router.post(
 router.put(
   "/:id",
   authenticateJWT,
-  ServiceProviderController.updateValidation,
-  serviceProviderController.updateServiceProvider.bind(
-    serviceProviderController
-  )
+  requireAdmin,
+  (req, res, next) =>
+    serviceProviderController.updateServiceProvider(req, res, next)
 );
 
 /**
@@ -485,10 +480,9 @@ router.put(
 router.delete(
   "/:id",
   authenticateJWT,
-  ServiceProviderController.deleteValidation,
-  serviceProviderController.deleteServiceProvider.bind(
-    serviceProviderController
-  )
+  requireAdmin,
+  (req, res, next) =>
+    serviceProviderController.deleteServiceProvider(req, res, next)
 );
 
 export default router;

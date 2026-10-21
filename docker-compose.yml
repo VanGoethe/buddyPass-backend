@@ -1,0 +1,36 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: buddypass
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    profiles: ["redis"]
+    ports:
+      - "6379:6379"
+
+  api:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/buddypass
+      JWT_SECRET: replace-with-a-secret-of-at-least-32-characters
+      JWT_REFRESH_SECRET: replace-with-another-secret-of-32-characters
+      CREDENTIALS_ENCRYPTION_KEY: MDExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTE=
+      TRUST_PROXY: "true"
+    depends_on:
+      db:
+        condition: service_healthy

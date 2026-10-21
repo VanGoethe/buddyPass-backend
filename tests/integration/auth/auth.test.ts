@@ -16,6 +16,7 @@ describe("Authentication Integration Tests", () => {
   let cleanup: TestDataCleanup;
   let testUser: any;
   let accessToken: string;
+  let refreshToken: string;
 
   beforeAll(async () => {
     cleanup = new TestDataCleanup();
@@ -24,6 +25,7 @@ describe("Authentication Integration Tests", () => {
   afterAll(async () => {
     await cleanup.cleanupAll();
     await cleanup.disconnect();
+    await prisma.$disconnect();
   });
 
   describe("POST /api/users/register", () => {
@@ -83,7 +85,10 @@ describe("Authentication Integration Tests", () => {
 
       expect(secondResponse.body).toMatchObject({
         success: false,
-        message: "User with this email already exists",
+        error: {
+          code: "EMAIL_EXISTS",
+          message: "User with this email already exists",
+        },
       });
     });
 
@@ -101,9 +106,9 @@ describe("Authentication Integration Tests", () => {
 
       expect(response.body).toMatchObject({
         success: false,
-        message: "Validation failed",
         error: {
           code: "VALIDATION_ERROR",
+          message: "Request validation failed",
         },
       });
     });
@@ -122,9 +127,9 @@ describe("Authentication Integration Tests", () => {
 
       expect(response.body).toMatchObject({
         success: false,
-        message: "Validation failed",
         error: {
           code: "VALIDATION_ERROR",
+          message: "Request validation failed",
         },
       });
     });
@@ -142,9 +147,9 @@ describe("Authentication Integration Tests", () => {
 
       expect(response.body).toMatchObject({
         success: false,
-        message: "Validation failed",
         error: {
           code: "VALIDATION_ERROR",
+          message: "Request validation failed",
         },
       });
     });
@@ -185,11 +190,12 @@ describe("Authentication Integration Tests", () => {
             name: "Login Test User",
           },
           accessToken: expect.any(String),
+          refreshToken: expect.any(String),
         },
       });
 
-      // Store tokens for other tests
       accessToken = response.body.data.accessToken;
+      refreshToken = response.body.data.refreshToken;
     });
 
     it("should reject login with invalid email", async () => {
@@ -205,7 +211,10 @@ describe("Authentication Integration Tests", () => {
 
       expect(response.body).toMatchObject({
         success: false,
-        message: "Invalid email or password",
+        error: {
+          code: "INVALID_CREDENTIALS",
+          message: "Invalid email or password",
+        },
       });
     });
 
@@ -222,7 +231,10 @@ describe("Authentication Integration Tests", () => {
 
       expect(response.body).toMatchObject({
         success: false,
-        message: "Invalid email or password",
+        error: {
+          code: "INVALID_CREDENTIALS",
+          message: "Invalid email or password",
+        },
       });
     });
 
@@ -239,9 +251,9 @@ describe("Authentication Integration Tests", () => {
 
       expect(response.body).toMatchObject({
         success: false,
-        message: "Validation failed",
         error: {
           code: "VALIDATION_ERROR",
+          message: "Request validation failed",
         },
       });
     });
@@ -384,9 +396,9 @@ describe("Authentication Integration Tests", () => {
 
       expect(response.body).toMatchObject({
         success: false,
-        message: "Validation failed",
         error: {
           code: "VALIDATION_ERROR",
+          message: "Request validation failed",
         },
       });
     });
@@ -421,11 +433,14 @@ describe("Authentication Integration Tests", () => {
         .put("/api/users/change-password")
         .set("Authorization", `Bearer ${accessToken}`)
         .send(passwordData)
-        .expect(400);
+        .expect(401);
 
       expect(response.body).toMatchObject({
         success: false,
-        message: "Current password is incorrect",
+        error: {
+          code: "INVALID_CREDENTIALS",
+          message: "Current password is incorrect",
+        },
       });
     });
 
@@ -443,9 +458,9 @@ describe("Authentication Integration Tests", () => {
 
       expect(response.body).toMatchObject({
         success: false,
-        message: "Validation failed",
         error: {
           code: "VALIDATION_ERROR",
+          message: "Request validation failed",
         },
       });
     });
@@ -472,10 +487,10 @@ describe("Authentication Integration Tests", () => {
   });
 
   describe("POST /api/users/logout", () => {
-    it("should logout successfully", async () => {
+    it("should logout successfully with a refresh token", async () => {
       const response = await request(app)
         .post("/api/users/logout")
-        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ refreshToken })
         .expect(200);
 
       expect(response.body).toMatchObject({
@@ -484,12 +499,15 @@ describe("Authentication Integration Tests", () => {
       });
     });
 
-    it("should handle logout without token gracefully", async () => {
-      const response = await request(app).post("/api/users/logout").expect(200);
+    it("should reject logout without a refresh token", async () => {
+      const response = await request(app).post("/api/users/logout").expect(400);
 
       expect(response.body).toMatchObject({
-        success: true,
-        message: "Logout successful",
+        success: false,
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Request validation failed",
+        },
       });
     });
   });

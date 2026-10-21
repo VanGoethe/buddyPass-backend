@@ -1,60 +1,28 @@
 import { PrismaClient } from "@prisma/client";
+import { env } from "./env";
+import { logger } from "../utils/logger";
 
-/**
- * Database configuration and connection management
- */
-let prisma: PrismaClient;
+let prisma: PrismaClient | undefined;
 
-/**
- * Initialize Prisma client with configuration
- */
-export const initializePrisma = (): PrismaClient => {
+export const getPrismaClient = (): PrismaClient => {
   if (!prisma) {
     prisma = new PrismaClient({
-      log:
-        process.env.NODE_ENV === "development"
-          ? ["query", "info", "warn", "error"]
-          : ["error"],
+      log: env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
     });
   }
   return prisma;
 };
 
-/**
- * Get Prisma client instance
- */
-export const getPrismaClient = (): PrismaClient => {
-  if (!prisma) {
-    return initializePrisma();
-  }
-  return prisma;
-};
-
-/**
- * Connect to database
- */
 export const connectDatabase = async (): Promise<void> => {
-  try {
-    const client = getPrismaClient();
-    await client.$connect();
-    console.log("✅ Database connected successfully");
-  } catch (error) {
-    console.error("❌ Database connection failed:", error);
-    throw error;
-  }
+  const client = getPrismaClient();
+  await client.$connect();
+  logger.info("Database connected");
 };
 
-/**
- * Disconnect from database
- */
 export const disconnectDatabase = async (): Promise<void> => {
-  try {
-    if (prisma) {
-      await prisma.$disconnect();
-      console.log("✅ Database disconnected successfully");
-    }
-  } catch (error) {
-    console.error("❌ Database disconnection failed:", error);
-    throw error;
+  if (prisma) {
+    await prisma.$disconnect();
+    prisma = undefined;
+    logger.info("Database disconnected");
   }
 };

@@ -5,7 +5,7 @@
 import { Router } from "express";
 import container from "../container";
 import { CurrencyController } from "../controllers/currencies";
-import { authenticateJWT } from "../middleware/auth";
+import { authenticateJWT, requireAdmin } from "../middleware/auth";
 
 const router = Router();
 
@@ -139,10 +139,10 @@ const currencyController =
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.post("/", authenticateJWT, (req, res) =>
-  currencyController.createCurrency(req, res)
+router.post("/", authenticateJWT, requireAdmin, (req, res, next) =>
+  currencyController.createCurrency(req, res, next)
 );
-router.get("/", (req, res) => currencyController.getCurrencies(req, res));
+router.get("/", (req, res, next) => currencyController.getCurrencies(req, res, next));
 
 /**
  * @swagger
@@ -179,8 +179,8 @@ router.get("/", (req, res) => currencyController.getCurrencies(req, res));
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.get("/active", (req, res) =>
-  currencyController.getActiveCurrencies(req, res)
+router.get("/active", (req, res, next) =>
+  currencyController.getActiveCurrencies(req, res, next)
 );
 
 /**
@@ -319,12 +319,12 @@ router.get("/active", (req, res) =>
  *                 code: "CURRENCY_IN_USE"
  *                 message: "Cannot delete currency that is being used by countries or subscriptions"
  */
-router.get("/:id", (req, res) => currencyController.getCurrencyById(req, res));
-router.put("/:id", authenticateJWT, (req, res) =>
-  currencyController.updateCurrency(req, res)
+router.get("/:id", (req, res, next) => currencyController.getCurrencyById(req, res, next));
+router.put("/:id", authenticateJWT, requireAdmin, (req, res, next) =>
+  currencyController.updateCurrency(req, res, next)
 );
-router.delete("/:id", authenticateJWT, (req, res) =>
-  currencyController.deleteCurrency(req, res)
+router.delete("/:id", authenticateJWT, requireAdmin, (req, res, next) =>
+  currencyController.deleteCurrency(req, res, next)
 );
 
 /**
@@ -370,8 +370,8 @@ router.delete("/:id", authenticateJWT, (req, res) =>
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.get("/code/:code", (req, res) =>
-  currencyController.getCurrencyByCode(req, res)
+router.get("/code/:code", (req, res, next) =>
+  currencyController.getCurrencyByCode(req, res, next)
 );
 
 export default router;

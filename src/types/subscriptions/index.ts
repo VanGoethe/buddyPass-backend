@@ -4,7 +4,7 @@
 
 import { Prisma } from "@prisma/client";
 import { ICountry } from "../countries";
-import { User } from "../users";
+import { User, UserRole } from "../users";
 
 // Entity Interface
 export interface ISubscription {
@@ -13,8 +13,13 @@ export interface ISubscription {
   countryId?: string | null;
   name: string;
   email: string;
-  passwordHash: string;
-  availableSlots: number;
+  passwordCiphertext: string;
+  passwordIv: string;
+  passwordTag: string;
+  keyVersion: number;
+  needsCredentialReset: boolean;
+  maxSlots: number;
+  occupiedSlots?: number;
   expiresAt?: Date | null;
   renewalInfo?: Prisma.JsonValue | null;
   userPrice?: Prisma.Decimal | null;
@@ -33,6 +38,7 @@ export interface ISubscriptionSlot {
   subscriptionId: string;
   assignedAt: Date;
   isActive: boolean;
+  releasedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
   user?: User;
@@ -71,7 +77,7 @@ export interface CreateSubscriptionData {
   name: string;
   email: string;
   password: string;
-  availableSlots: number;
+  maxSlots: number;
   expiresAt?: Date;
   renewalInfo?: Prisma.JsonValue;
   userPrice?: number;
@@ -84,7 +90,7 @@ export interface UpdateSubscriptionData {
   name?: string;
   email?: string;
   password?: string;
-  availableSlots?: number;
+  maxSlots?: number;
   countryId?: string;
   expiresAt?: Date;
   renewalInfo?: Prisma.JsonValue;
@@ -152,7 +158,9 @@ export interface SubscriptionResponse {
   countryId?: string | null;
   name: string;
   email: string;
+  maxSlots: number;
   availableSlots: number;
+  needsCredentialReset: boolean;
   country?: {
     id: string;
     name: string;
@@ -185,7 +193,7 @@ export interface SubscriptionQueryOptions {
   sortBy?:
     | "name"
     | "email"
-    | "availableSlots"
+    | "maxSlots"
     | "expiresAt"
     | "createdAt"
     | "updatedAt";
@@ -196,70 +204,69 @@ export interface SubscriptionQueryOptions {
   countryId?: string;
 }
 
-// Repository Interface
+export interface StoredCredential {
+  passwordCiphertext: string;
+  passwordIv: string;
+  passwordTag: string;
+  keyVersion: number;
+  needsCredentialReset?: boolean;
+}
+
 export interface ISubscriptionRepository {
   create(
-    data: CreateSubscriptionData & { passwordHash: string }
+    data: Omit<CreateSubscriptionData, "password"> & StoredCredential
   ): Promise<ISubscription>;
-  findById(id: string, includeCountry?: boolean): Promise<ISubscription | null>;
+  findById(id: string): Promise<ISubscription | null>;
   findMany(options?: SubscriptionQueryOptions): Promise<{
     subscriptions: ISubscription[];
     total: number;
   }>;
   update(
     id: string,
-    data: UpdateSubscriptionData & { passwordHash?: string }
+    data: Omit<UpdateSubscriptionData, "password"> & Partial<StoredCredential>
   ): Promise<ISubscription>;
   delete(id: string): Promise<void>;
   existsByEmail(email: string, excludeId?: string): Promise<boolean>;
   findByServiceProviderId(serviceProviderId: string): Promise<ISubscription[]>;
+  count(): Promise<number>;
   countByServiceProviderId(serviceProviderId: string): Promise<number>;
-  findAvailableByServiceProviderId(
-    serviceProviderId: string,
-    countryId?: string
-  ): Promise<ISubscription[]>;
-  decrementAvailableSlots(subscriptionId: string): Promise<ISubscription>;
 }
 
-// Subscription Slot Repository Interface
 export interface ISubscriptionSlotRepository {
   create(data: {
     userId: string;
     subscriptionId: string;
   }): Promise<ISubscriptionSlot>;
+  findById(id: string): Promise<ISubscriptionSlot | null>;
   findByUserId(userId: string): Promise<ISubscriptionSlot[]>;
   findBySubscriptionId(subscriptionId: string): Promise<ISubscriptionSlot[]>;
   findByUserAndSubscription(
     userId: string,
     subscriptionId: string
   ): Promise<ISubscriptionSlot | null>;
-  findByUserAndServiceProvider(
+  findActiveByUserAndProvider(
     userId: string,
     serviceProviderId: string
   ): Promise<ISubscriptionSlot | null>;
-  countBySubscriptionId(subscriptionId: string): Promise<number>;
-  delete(id: string): Promise<void>;
-  deleteByUserAndSubscription(
-    userId: string,
-    subscriptionId: string
-  ): Promise<void>;
+  countActiveBySubscriptionId(subscriptionId: string): Promise<number>;
+  release(id: string): Promise<ISubscriptionSlot>;
 }
 
-// Subscription Request Repository Interface
 export interface ISubscriptionRequestRepository {
   create(
-    data: CreateSubscriptionRequestData & { userId: string }
+    data: CreateSubscriptionRequestData & {
+      userId: string;
+      status?: SubscriptionRequestStatus;
+      assignedSlotId?: string;
+      processedAt?: Date;
+    }
   ): Promise<ISubscriptionRequest>;
   findById(id: string): Promise<ISubscriptionRequest | null>;
   findByUserId(userId: string): Promise<ISubscriptionRequest[]>;
-  findPendingRequests(): Promise<ISubscriptionRequest[]>;
-  findPendingByServiceProvider(
-    serviceProviderId: string
+  findPendingByProviderAndCountry(
+    serviceProviderId: string,
+    countryId?: string | null
   ): Promise<ISubscriptionRequest[]>;
-  updateStatus(
-    id: string,
-    status: SubscriptionRequestStatus
-  ): Promise<ISubscriptionRequest>;
   update(
     id: string,
     data: {
@@ -269,10 +276,13 @@ export interface ISubscriptionRequestRepository {
       metadata?: Prisma.JsonValue;
     }
   ): Promise<ISubscriptionRequest>;
-  delete(id: string): Promise<void>;
 }
 
-// Service Interface
+export interface CredentialReveal {
+  email: string;
+  password: string;
+}
+
 export interface ISubscriptionService {
   createSubscription(
     data: CreateSubscriptionData
@@ -294,22 +304,42 @@ export interface ISubscriptionService {
     data: CreateSubscriptionRequestData
   ): Promise<SubscriptionRequestResponse>;
   getUserSubscriptionSlots(userId: string): Promise<SubscriptionSlotResponse[]>;
+  listMyRequests(userId: string): Promise<SubscriptionRequestResponse[]>;
+  revealCredentials(
+    slotId: string,
+    actor: { id: string; role: UserRole }
+  ): Promise<CredentialReveal>;
+  releaseSlot(
+    slotId: string,
+    actor: { id: string; role: UserRole }
+  ): Promise<void>;
 }
 
-// Slot Assignment Service Interface
+export interface SlotCandidate {
+  id: string;
+  maxSlots: number;
+  occupied: number;
+}
+
+export function selectSubscriptionForAllocation(
+  rows: SlotCandidate[]
+): SlotCandidate | null {
+  return rows.find((row) => row.occupied < row.maxSlots) ?? null;
+}
+
 export interface ISlotAssignmentService {
   assignSlotToUser(
     userId: string,
     serviceProviderId: string,
-    countryId?: string
+    countryId?: string | null
   ): Promise<{
     success: boolean;
     slotAssignment?: ISubscriptionSlot;
     message: string;
   }>;
-  findAvailableSlot(
+  processPending(
     serviceProviderId: string,
-    countryId?: string
-  ): Promise<ISubscription | null>;
-  validateSlotAssignment(subscriptionId: string): Promise<boolean>;
+    countryId?: string | null
+  ): Promise<number>;
+  releaseExpiredSlots(): Promise<number>;
 }

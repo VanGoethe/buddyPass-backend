@@ -13,79 +13,80 @@ import {
 } from "../../types/serviceProviders";
 import { ICountryRepository } from "../../types/countries";
 import { ServiceProvider } from "../../models/serviceProviders";
+import {
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+} from "../../utils/errors";
 
 export class ServiceProviderService implements IServiceProviderService {
   constructor(
     private serviceProviderRepository: IServiceProviderRepository,
-    private countryRepository: ICountryRepository
+    private countryRepository: ICountryRepository,
   ) {}
 
   async createServiceProvider(
-    data: CreateServiceProviderData
+    data: CreateServiceProviderData,
   ): Promise<ServiceProviderResponse> {
-    // Validate input data
     ServiceProvider.validateCreateData(data);
 
-    // Validate country IDs if provided
     if (data.supportedCountryIds && data.supportedCountryIds.length > 0) {
       await this.validateCountryIds(data.supportedCountryIds);
     }
 
-    // Check if name already exists
     const nameExists = await this.serviceProviderRepository.existsByName(
-      data.name
+      data.name,
     );
     if (nameExists) {
-      throw new Error("A service provider with this name already exists");
+      throw new ConflictError(
+        "A service provider with this name already exists",
+      );
     }
 
-    // Create service provider
     const serviceProvider = await this.serviceProviderRepository.create(data);
-
-    // Get with countries included
     const serviceProviderWithCountries =
       await this.serviceProviderRepository.findById(serviceProvider.id, true);
 
-    return new ServiceProvider(serviceProviderWithCountries!).toResponse();
+    if (!serviceProviderWithCountries) {
+      throw new NotFoundError("Service provider not found");
+    }
+
+    return new ServiceProvider(serviceProviderWithCountries).toResponse();
   }
 
   async getServiceProviderById(id: string): Promise<ServiceProviderResponse> {
     if (!id || id.trim().length === 0) {
-      throw new Error("Service provider ID is required");
+      throw new ValidationError("Service provider ID is required");
     }
 
     const serviceProvider = await this.serviceProviderRepository.findById(
       id,
-      true
+      true,
     );
 
     if (!serviceProvider) {
-      throw new Error("Service provider not found");
+      throw new NotFoundError("Service provider not found");
     }
 
     return new ServiceProvider(serviceProvider).toResponse();
   }
 
   async getServiceProviders(
-    options: ServiceProviderQueryOptions = {}
+    options: ServiceProviderQueryOptions = {},
   ): Promise<ServiceProviderListResponse> {
-    // Validate pagination parameters
     if (options.page !== undefined && options.page < 1) {
-      throw new Error("Page number must be greater than 0");
+      throw new ValidationError("Page number must be greater than 0");
     }
 
     if (options.limit && (options.limit < 1 || options.limit > 100)) {
-      throw new Error("Limit must be between 1 and 100");
+      throw new ValidationError("Limit must be between 1 and 100");
     }
 
     const { page = 1, limit = 10 } = options;
-
     const result = await this.serviceProviderRepository.findMany(options);
-
-    const serviceProviders = result.serviceProviders.map((sp) =>
-      new ServiceProvider(sp).toResponse()
+    const serviceProviders = result.serviceProviders.map((provider) =>
+      new ServiceProvider(provider).toResponse(),
     );
-
     const totalPages = Math.ceil(result.total / limit);
 
     return {
@@ -103,69 +104,63 @@ export class ServiceProviderService implements IServiceProviderService {
 
   async updateServiceProvider(
     id: string,
-    data: UpdateServiceProviderData
+    data: UpdateServiceProviderData,
   ): Promise<ServiceProviderResponse> {
     if (!id || id.trim().length === 0) {
-      throw new Error("Service provider ID is required");
+      throw new ValidationError("Service provider ID is required");
     }
 
-    // Validate input data
     ServiceProvider.validateUpdateData(data);
 
-    // Validate country IDs if provided
     if (data.supportedCountryIds && data.supportedCountryIds.length > 0) {
       await this.validateCountryIds(data.supportedCountryIds);
     }
 
-    // Check if service provider exists
     const existingServiceProvider =
       await this.serviceProviderRepository.findById(id);
     if (!existingServiceProvider) {
-      throw new Error("Service provider not found");
+      throw new NotFoundError("Service provider not found");
     }
 
-    // Check if new name conflicts with existing service provider
     if (data.name) {
       const nameExists = await this.serviceProviderRepository.existsByName(
         data.name,
-        id
+        id,
       );
       if (nameExists) {
-        throw new Error("A service provider with this name already exists");
+        throw new ConflictError(
+          "A service provider with this name already exists",
+        );
       }
     }
 
-    // Update service provider
-    const updatedServiceProvider = await this.serviceProviderRepository.update(
-      id,
-      data
-    );
+    await this.serviceProviderRepository.update(id, data);
 
-    // Get with countries included
     const serviceProviderWithCountries =
       await this.serviceProviderRepository.findById(id, true);
+    if (!serviceProviderWithCountries) {
+      throw new NotFoundError("Service provider not found");
+    }
 
-    return new ServiceProvider(serviceProviderWithCountries!).toResponse();
+    return new ServiceProvider(serviceProviderWithCountries).toResponse();
   }
 
   async deleteServiceProvider(id: string): Promise<void> {
     if (!id || id.trim().length === 0) {
-      throw new Error("Service provider ID is required");
+      throw new ValidationError("Service provider ID is required");
     }
 
-    // Check if service provider exists
     const existingServiceProvider =
       await this.serviceProviderRepository.findById(id);
     if (!existingServiceProvider) {
-      throw new Error("Service provider not found");
+      throw new NotFoundError("Service provider not found");
     }
 
-    // Delete service provider
     await this.serviceProviderRepository.delete(id);
   }
 
   /**
-   * Validates that all provided country IDs exist
+   * Validates that all provided country IDs exist and are active
    */
   private async validateCountryIds(countryIds: string[]): Promise<void> {
     const uniqueCountryIds = [...new Set(countryIds)];
@@ -173,10 +168,10 @@ export class ServiceProviderService implements IServiceProviderService {
     for (const countryId of uniqueCountryIds) {
       const country = await this.countryRepository.findById(countryId);
       if (!country) {
-        throw new Error(`Country with ID ${countryId} not found`);
+        throw new NotFoundError(`Country with ID ${countryId} not found`);
       }
       if (!country.isActive) {
-        throw new Error(`Country ${country.name} is not active`);
+        throw new ValidationError(`Country ${country.name} is not active`);
       }
     }
   }
@@ -187,10 +182,10 @@ export class ServiceProviderService implements IServiceProviderService {
  */
 export function createServiceProviderService(
   serviceProviderRepository: IServiceProviderRepository,
-  countryRepository: ICountryRepository
+  countryRepository: ICountryRepository,
 ): IServiceProviderService {
   return new ServiceProviderService(
     serviceProviderRepository,
-    countryRepository
+    countryRepository,
   );
 }

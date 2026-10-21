@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
-import { validationResult } from "express-validator";
-import { TokenPayload, UserRole } from "../types/users";
+import { UserRole } from "../types/users";
+import { logger } from "../utils/logger";
 
 // Lazy import container to avoid circular dependency issues during test setup
 const getContainer = () => {
@@ -25,34 +25,7 @@ declare global {
 }
 
 /**
- * Middleware to validate request body using express-validator
- */
-export const validateRequest = (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): void => {
-  const errors = validationResult(req);
-
-  if (!errors.isEmpty()) {
-    res.status(400).json({
-      success: false,
-      message: "Validation failed",
-      error: {
-        code: "VALIDATION_ERROR",
-        message: "Request validation failed",
-        details: errors.array(),
-      },
-    });
-    return;
-  }
-
-  next();
-};
-
-/**
- * JWT Authentication middleware using clean architecture pattern
- * This replaces both authenticateJWT and authenticateUserJWT
+ * JWT Authentication middleware
  */
 export const authenticateJWT = async (
   req: Request,
@@ -133,7 +106,7 @@ export const authenticateJWT = async (
 
     next();
   } catch (error) {
-    console.error("JWT authentication error:", error);
+    logger.error({ err: error }, "JWT authentication error");
     res.status(500).json({
       success: false,
       error: {
@@ -186,7 +159,7 @@ export const optionalAuth = async (
     next();
   } catch (error) {
     // In optional auth, we don't fail on errors, just log them
-    console.error("Optional auth error:", error);
+    logger.error({ err: error }, "Optional auth error");
     next();
   }
 };
@@ -225,54 +198,7 @@ export const requireVerified = (
   next();
 };
 
-/**
- * Rate limiting middleware for auth endpoints
- */
-export const authRateLimit = (
-  maxAttempts: number = 5,
-  windowMs: number = 15 * 60 * 1000
-) => {
-  const attempts = new Map<string, { count: number; resetTime: number }>();
-
-  return (req: Request, res: Response, next: NextFunction): void => {
-    const key = req.ip || "unknown";
-    const now = Date.now();
-    const userAttempts = attempts.get(key);
-
-    if (userAttempts && now < userAttempts.resetTime) {
-      if (userAttempts.count >= maxAttempts) {
-        res.status(429).json({
-          success: false,
-          error: {
-            code: "RATE_LIMIT_EXCEEDED",
-            message:
-              "Too many authentication attempts. Please try again later.",
-            details: {
-              retryAfter: Math.ceil((userAttempts.resetTime - now) / 1000),
-            },
-          },
-        });
-        return;
-      }
-      userAttempts.count++;
-    } else {
-      attempts.set(key, { count: 1, resetTime: now + windowMs });
-    }
-
-    // Cleanup old entries periodically
-    if (Math.random() < 0.01) {
-      // 1% chance to cleanup
-      const now = Date.now();
-      for (const [key, attempt] of attempts.entries()) {
-        if (now > attempt.resetTime) {
-          attempts.delete(key);
-        }
-      }
-    }
-
-    next();
-  };
-};
+export { authRateLimit } from "./rateLimit";
 
 /**
  * Middleware to check if user owns the resource

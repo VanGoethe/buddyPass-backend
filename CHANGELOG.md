@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-10-21
+
+Breaking release. Response bodies, shared credentials, and subscription capacity all change.
+
+### Security
+
+- Stopped tracking `.env`, `node_modules`, and `dist`. `.env` was in the first commit, so `DATABASE_URL`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, and `GOOGLE_CLIENT_SECRET` from that history must be rotated on the database host and in Google Cloud. Local JWT secrets and `CREDENTIALS_ENCRYPTION_KEY` are no longer the committed values. Git history was not rewritten.
+- Removed the JWT signing fallback and the default admin password. `scripts/create-admin.ts` requires `ADMIN_EMAIL` and `ADMIN_PASSWORD` and does not print the password.
+- Removed the registration request log that printed passwords.
+- Access tokens last 15 minutes, pin `HS256`, and set issuer `buddypass` and audience `buddypass-api`. Refresh tokens are stored as SHA-256 hashes, rotate on `POST /api/users/refresh`, and a reused token revokes the family.
+- Admin role is required to create, update, or delete subscriptions, service providers, countries, and currencies. Subscription list and detail are admin-only.
+- Login and refresh reject inactive users. Slot requests require a verified user.
+- Request bodies are limited to 100kb. Rate limits use `express-rate-limit` (Redis when `REDIS_URL` is set).
+
+### Changed
+
+- Shared subscription passwords are encrypted with AES-256-GCM (`passwordCiphertext`, `passwordIv`, `passwordTag`, `keyVersion`). Existing bcrypt hashes cannot be recovered. The migration sets `needsCredentialReset` on those rows so an admin can enter the password again.
+- `availableSlots` is no longer stored. `maxSlots` is the capacity. `availableSlots` in responses is `maxSlots` minus active slots.
+- Slot assignment runs in a serializable transaction and will not give away the last seat twice. Pending requests are assigned when a subscription is created, when `maxSlots` increases, or when a slot is released. `DELETE /api/subscriptions/slots/:slotId` releases a slot. An hourly job releases slots on expired subscriptions.
+- `GET /api/subscriptions/slots/:slotId/credentials` returns the email and password to the slot owner or an admin, with `Cache-Control: no-store`.
+- Errors are `{ success: false, error: { code, message, details? } }`. Success is `{ success: true, data, message? }`. Login and registration no longer return HTTP 200 with `success: false`.
+- Google sign-in links an email only when the local account is already verified.
+- Request validation uses Zod. OpenAPI components are generated from those schemas.
+
+### Migration
+
+1. Rotate the database password and the Google client secret, then put the new values in `.env`.
+2. Set `JWT_SECRET`, `JWT_REFRESH_SECRET`, and `CREDENTIALS_ENCRYPTION_KEY` (`openssl rand -base64 32`).
+3. Run `npx prisma migrate deploy`. This drops stored refresh tokens, renames capacity to `maxSlots`, and flags old password hashes for reset.
+4. Re-enter streaming passwords for subscriptions with `needsCredentialReset: true`.
+5. Clients must send `accessToken` and `refreshToken` from auth responses, and must call `POST /api/users/refresh` with `{ "refreshToken" }`.
+
+## [1.x] - previously unreleased notes
+
 ### Added
 
 - **Automatic Subscription Slot Assignment System**: Implemented comprehensive automatic slot assignment feature

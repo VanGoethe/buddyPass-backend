@@ -5,6 +5,7 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaUserRepository } from "../../../src/repositories/users";
 import { UserRole } from "../../../src/types/users";
+import { assertTestDatabase } from "../../utils/assertTestDatabase";
 
 describe("PrismaUserRepository", () => {
   let prisma: PrismaClient;
@@ -29,6 +30,7 @@ describe("PrismaUserRepository", () => {
 
   beforeEach(async () => {
     // Clean up users table before each test
+    assertTestDatabase();
     await prisma.user.deleteMany();
   });
 
@@ -41,7 +43,7 @@ describe("PrismaUserRepository", () => {
             email: "admin1@test.com",
             name: "Admin User 1",
             password: "hashedpassword1",
-            provider: "local",
+            provider: "local" as const,
             role: UserRole.ADMIN,
             isActive: true,
             isVerified: true,
@@ -50,7 +52,7 @@ describe("PrismaUserRepository", () => {
             email: "admin2@test.com",
             name: "Admin User 2",
             password: "hashedpassword2",
-            provider: "local",
+            provider: "local" as const,
             role: UserRole.ADMIN,
             isActive: false,
             isVerified: true,
@@ -59,7 +61,7 @@ describe("PrismaUserRepository", () => {
             email: "user1@test.com",
             name: "Regular User 1",
             password: "hashedpassword3",
-            provider: "local",
+            provider: "local" as const,
             role: UserRole.USER,
             isActive: true,
             isVerified: false,
@@ -68,7 +70,7 @@ describe("PrismaUserRepository", () => {
             email: "user2@test.com",
             name: "Regular User 2",
             password: "hashedpassword4",
-            provider: "local",
+            provider: "local" as const,
             role: UserRole.USER,
             isActive: true,
             isVerified: true,
@@ -77,7 +79,7 @@ describe("PrismaUserRepository", () => {
             email: "user3@test.com",
             name: "Regular User 3",
             password: "hashedpassword5",
-            provider: "local",
+            provider: "local" as const,
             role: UserRole.USER,
             isActive: false,
             isVerified: true,
@@ -179,7 +181,8 @@ describe("PrismaUserRepository", () => {
 
     it("should handle empty results", async () => {
       // Clear all users first
-      await prisma.user.deleteMany();
+      assertTestDatabase();
+    await prisma.user.deleteMany();
 
       const nonExistentRoleUsers = await userRepository.findMany({
         role: UserRole.ADMIN, // Valid role but no users exist
@@ -198,7 +201,7 @@ describe("PrismaUserRepository", () => {
             email: "admin1@test.com",
             name: "Admin User 1",
             password: "hashedpassword1",
-            provider: "local",
+            provider: "local" as const,
             role: UserRole.ADMIN,
             isActive: true,
             isVerified: true,
@@ -207,7 +210,7 @@ describe("PrismaUserRepository", () => {
             email: "admin2@test.com",
             name: "Admin User 2",
             password: "hashedpassword2",
-            provider: "local",
+            provider: "local" as const,
             role: UserRole.ADMIN,
             isActive: false,
             isVerified: true,
@@ -216,7 +219,7 @@ describe("PrismaUserRepository", () => {
             email: "user1@test.com",
             name: "Regular User 1",
             password: "hashedpassword3",
-            provider: "local",
+            provider: "local" as const,
             role: UserRole.USER,
             isActive: true,
             isVerified: false,
@@ -225,7 +228,7 @@ describe("PrismaUserRepository", () => {
             email: "user2@test.com",
             name: "Regular User 2",
             password: "hashedpassword4",
-            provider: "local",
+            provider: "local" as const,
             role: UserRole.USER,
             isActive: false,
             isVerified: true,
@@ -272,7 +275,8 @@ describe("PrismaUserRepository", () => {
 
     it("should return 0 for non-matching filters", async () => {
       // Clear all users first
-      await prisma.user.deleteMany();
+      assertTestDatabase();
+    await prisma.user.deleteMany();
 
       const nonExistentCount = await userRepository.count({
         role: UserRole.ADMIN, // Valid role but no users exist
@@ -288,7 +292,7 @@ describe("PrismaUserRepository", () => {
         email: "test@example.com",
         password: "hashedpassword",
         name: "Test User",
-        provider: "local",
+        provider: "local" as const,
         role: UserRole.USER,
       };
 
@@ -307,7 +311,7 @@ describe("PrismaUserRepository", () => {
         email: "test@example.com",
         password: "hashedpassword",
         name: "Test User",
-        provider: "local",
+        provider: "local" as const,
       };
 
       const createdUser = await userRepository.create(userData);
@@ -323,7 +327,7 @@ describe("PrismaUserRepository", () => {
         email: "test@example.com",
         password: "hashedpassword",
         name: "Test User",
-        provider: "local",
+        provider: "local" as const,
       };
 
       const createdUser = await userRepository.create(userData);
@@ -339,12 +343,12 @@ describe("PrismaUserRepository", () => {
         email: "test@example.com",
         password: "hashedpassword",
         name: "Test User",
-        provider: "local",
+        provider: "local" as const,
       };
 
       const createdUser = await userRepository.create(userData);
 
-      const updatedUser = await userRepository.update(createdUser.id, {
+      const updatedUser = await userRepository.updateProfile(createdUser.id, {
         name: "Updated Name",
       });
 
@@ -357,7 +361,7 @@ describe("PrismaUserRepository", () => {
         email: "test@example.com",
         password: "hashedpassword",
         name: "Test User",
-        provider: "local",
+        provider: "local" as const,
       };
 
       const createdUser = await userRepository.create(userData);

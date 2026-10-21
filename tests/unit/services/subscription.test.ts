@@ -1,751 +1,372 @@
-/**
- * Subscription Service Unit Tests
- */
-
-import bcrypt from "bcryptjs";
+import { Prisma } from "@prisma/client";
 import { SubscriptionService } from "../../../src/services/subscriptions";
 import {
-  ISubscriptionRepository,
-  ISubscriptionSlotRepository,
-  ISubscriptionRequestRepository,
   ISlotAssignmentService,
+  ISubscription,
+  ISubscriptionRepository,
+  ISubscriptionRequestRepository,
+  ISubscriptionSlotRepository,
 } from "../../../src/types/subscriptions";
 import { IServiceProviderRepository } from "../../../src/types/serviceProviders";
 import { ICountryRepository } from "../../../src/types/countries";
-import { Subscription } from "../../../src/models/subscriptions";
+import { ValidationError } from "../../../src/utils/errors";
 
-// Mock bcrypt
-jest.mock("bcryptjs");
-const mockBcrypt = bcrypt as jest.Mocked<typeof bcrypt>;
-
-// Mock the repositories
-const mockSubscriptionRepository: jest.Mocked<ISubscriptionRepository> = {
-  create: jest.fn(),
-  findById: jest.fn(),
-  findMany: jest.fn(),
-  update: jest.fn(),
-  delete: jest.fn(),
-  existsByEmail: jest.fn(),
-  findByServiceProviderId: jest.fn(),
-  countByServiceProviderId: jest.fn(),
-  findAvailableByServiceProviderId: jest.fn(),
-  decrementAvailableSlots: jest.fn(),
+const country = {
+  id: "country_123",
+  name: "United States",
+  code: "US",
+  alpha3: "USA",
+  isActive: true,
+  createdAt: new Date(),
+  updatedAt: new Date(),
 };
 
-const mockServiceProviderRepository: jest.Mocked<IServiceProviderRepository> = {
-  create: jest.fn(),
-  findById: jest.fn(),
-  findMany: jest.fn(),
-  update: jest.fn(),
-  delete: jest.fn(),
-  existsByName: jest.fn(),
-  addSupportedCountries: jest.fn(),
-  removeSupportedCountries: jest.fn(),
-  getSupportedCountries: jest.fn(),
-};
-
-const mockCountryRepository: jest.Mocked<ICountryRepository> = {
-  create: jest.fn(),
-  findById: jest.fn(),
-  findMany: jest.fn(),
-  update: jest.fn(),
-  delete: jest.fn(),
-  findByCode: jest.fn(),
-  findByAlpha3: jest.fn(),
-  findActive: jest.fn(),
-  existsByName: jest.fn(),
-  existsByCode: jest.fn(),
-  existsByAlpha3: jest.fn(),
-};
-
-const mockSubscriptionSlotRepository: jest.Mocked<ISubscriptionSlotRepository> =
-  {
-    create: jest.fn(),
-    findByUserId: jest.fn(),
-    findBySubscriptionId: jest.fn(),
-    findByUserAndSubscription: jest.fn(),
-    findByUserAndServiceProvider: jest.fn(),
-    countBySubscriptionId: jest.fn(),
-    delete: jest.fn(),
-    deleteByUserAndSubscription: jest.fn(),
+function subscription(overrides: Partial<ISubscription> = {}): ISubscription {
+  return {
+    id: "sub_123",
+    serviceProviderId: "sp_123",
+    countryId: "country_123",
+    name: "Netflix Premium",
+    email: "test@example.com",
+    passwordCiphertext: "cipher",
+    passwordIv: "iv",
+    passwordTag: "tag",
+    keyVersion: 1,
+    needsCredentialReset: false,
+    maxSlots: 4,
+    occupiedSlots: 1,
+    expiresAt: null,
+    renewalInfo: null,
+    userPrice: new Prisma.Decimal("15.99"),
+    currencyId: "currency_123",
+    metadata: { plan: "premium" },
+    isActive: true,
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    country,
+    ...overrides,
   };
+}
 
-const mockSubscriptionRequestRepository: jest.Mocked<ISubscriptionRequestRepository> =
-  {
+describe("SubscriptionService", () => {
+  const subscriptionRepository: jest.Mocked<ISubscriptionRepository> = {
+    create: jest.fn(),
+    findById: jest.fn(),
+    findMany: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+    existsByEmail: jest.fn(),
+    findByServiceProviderId: jest.fn(),
+    count: jest.fn(),
+    countByServiceProviderId: jest.fn(),
+  };
+  const slotRepository: jest.Mocked<ISubscriptionSlotRepository> = {
     create: jest.fn(),
     findById: jest.fn(),
     findByUserId: jest.fn(),
-    findPendingRequests: jest.fn(),
-    findPendingByServiceProvider: jest.fn(),
-    updateStatus: jest.fn(),
+    findBySubscriptionId: jest.fn(),
+    findByUserAndSubscription: jest.fn(),
+    findActiveByUserAndProvider: jest.fn(),
+    countActiveBySubscriptionId: jest.fn(),
+    release: jest.fn(),
+  };
+  const requestRepository: jest.Mocked<ISubscriptionRequestRepository> = {
+    create: jest.fn(),
+    findById: jest.fn(),
+    findByUserId: jest.fn(),
+    findPendingByProviderAndCountry: jest.fn(),
+    update: jest.fn(),
+  };
+  const serviceProviderRepository: jest.Mocked<IServiceProviderRepository> = {
+    create: jest.fn(),
+    findById: jest.fn(),
+    findMany: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
+    count: jest.fn(),
+    existsByName: jest.fn(),
+    addSupportedCountries: jest.fn(),
+    removeSupportedCountries: jest.fn(),
+    getSupportedCountries: jest.fn(),
+  };
+  const countryRepository: jest.Mocked<ICountryRepository> = {
+    create: jest.fn(),
+    findById: jest.fn(),
+    findByCode: jest.fn(),
+    findByAlpha3: jest.fn(),
+    findMany: jest.fn(),
+    findActive: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+    existsByCode: jest.fn(),
+    existsByAlpha3: jest.fn(),
+    existsByName: jest.fn(),
+  };
+  const slotAssignmentService: jest.Mocked<ISlotAssignmentService> = {
+    assignSlotToUser: jest.fn(),
+    processPending: jest.fn(),
+    releaseExpiredSlots: jest.fn(),
   };
 
-const mockSlotAssignmentService: jest.Mocked<ISlotAssignmentService> = {
-  assignSlotToUser: jest.fn(),
-  findAvailableSlot: jest.fn(),
-  validateSlotAssignment: jest.fn(),
-};
+  let service: SubscriptionService;
 
-describe("SubscriptionService", () => {
-  let subscriptionService: SubscriptionService;
+  const validCreateData = {
+    serviceProviderId: "sp_123",
+    name: "Netflix Premium",
+    email: "test@example.com",
+    password: "password123",
+    maxSlots: 4,
+    countryId: "country_123",
+    userPrice: 15.99,
+    currencyId: "currency_123",
+    metadata: { plan: "premium" },
+    isActive: true,
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
-    subscriptionService = new SubscriptionService(
-      mockSubscriptionRepository,
-      mockSubscriptionSlotRepository,
-      mockSubscriptionRequestRepository,
-      mockServiceProviderRepository,
-      mockCountryRepository,
-      mockSlotAssignmentService
+    service = new SubscriptionService(
+      subscriptionRepository,
+      slotRepository,
+      requestRepository,
+      serviceProviderRepository,
+      countryRepository,
+      slotAssignmentService
     );
-  });
-
-  describe("createSubscription", () => {
-    const validCreateData = {
-      serviceProviderId: "sp_123",
-      name: "Netflix Premium",
-      email: "test@example.com",
-      password: "password123",
-      availableSlots: 4,
-      countryId: "country_123",
-      userPrice: 15.99,
-      currencyId: "cmc6lpjqw00009utlsvz3enyx",
-      metadata: { plan: "premium" },
-      isActive: true,
-    };
-
-    const mockServiceProvider = {
+    serviceProviderRepository.findById.mockResolvedValue({
       id: "sp_123",
       name: "Netflix",
       description: "Streaming service",
       metadata: null,
       createdAt: new Date(),
       updatedAt: new Date(),
-    };
+    });
+    countryRepository.findById.mockResolvedValue(country);
+    serviceProviderRepository.getSupportedCountries.mockResolvedValue([country]);
+    subscriptionRepository.existsByEmail.mockResolvedValue(false);
+    slotAssignmentService.processPending.mockResolvedValue(0);
+  });
 
-    const mockCreatedSubscription = {
-      id: "sub_123",
-      serviceProviderId: "sp_123",
-      countryId: "country_123",
-      name: "Netflix Premium",
-      email: "test@example.com",
-      passwordHash: "hashedPassword",
-      availableSlots: 4,
-      expiresAt: null,
-      renewalInfo: null,
-      userPrice: { toString: () => "15.99" } as any,
-      currencyId: "cmc6lpjqw00009utlsvz3enyx",
-      metadata: { plan: "premium" },
-      isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      country: {
-        id: "country_123",
-        name: "United States",
-        code: "US",
-        alpha3: "USA",
-        isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-    };
+  describe("createSubscription", () => {
+    it("stores encrypted credentials and maxSlots, then processes the queue", async () => {
+      const created = subscription();
+      subscriptionRepository.create.mockResolvedValue(created);
+      subscriptionRepository.findById.mockResolvedValue(created);
 
-    it("should create a subscription successfully", async () => {
-      mockServiceProviderRepository.findById.mockResolvedValue({
-        ...mockServiceProvider,
-        supportedCountries: [
-          {
-            country: {
-              id: "country_123",
-              name: "United States",
-              code: "US",
-              alpha3: "USA",
-              isActive: true,
-              createdAt: new Date(),
-              updatedAt: new Date(),
-            },
-          },
-        ],
-      });
-      mockServiceProviderRepository.getSupportedCountries.mockResolvedValue([
-        {
-          id: "country_123",
-          name: "United States",
-          code: "US",
-          alpha3: "USA",
-          isActive: true,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      ]);
-      // Mock country validation
-      mockCountryRepository.findById.mockResolvedValue({
-        id: "country_123",
-        name: "United States",
-        code: "US",
-        alpha3: "USA",
-        isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-      mockSubscriptionRepository.existsByEmail.mockResolvedValue(false);
-      mockBcrypt.hash.mockResolvedValue("hashedPassword" as never);
-      mockSubscriptionRepository.create.mockResolvedValue(
-        mockCreatedSubscription
-      );
-      // Mock the findById call after creation to get full subscription with relations
-      mockSubscriptionRepository.findById.mockResolvedValue(
-        mockCreatedSubscription
-      );
+      const result = await service.createSubscription(validCreateData);
 
-      const result = await subscriptionService.createSubscription(
-        validCreateData
+      expect(subscriptionRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serviceProviderId: "sp_123",
+          name: "Netflix Premium",
+          email: "test@example.com",
+          maxSlots: 4,
+          needsCredentialReset: false,
+          passwordCiphertext: expect.any(String),
+          passwordIv: expect.any(String),
+          passwordTag: expect.any(String),
+          keyVersion: expect.any(Number),
+        })
       );
-
-      expect(mockServiceProviderRepository.findById).toHaveBeenCalledWith(
-        "sp_123"
+      const payload = subscriptionRepository.create.mock.calls[0][0];
+      expect(payload).not.toHaveProperty("password");
+      expect(payload).not.toHaveProperty("passwordHash");
+      expect(payload).not.toHaveProperty("availableSlots");
+      expect(slotAssignmentService.processPending).toHaveBeenCalledWith(
+        "sp_123",
+        "country_123"
       );
-      expect(mockSubscriptionRepository.existsByEmail).toHaveBeenCalledWith(
-        "test@example.com"
-      );
-      expect(mockBcrypt.hash).toHaveBeenCalledWith("password123", 10);
-      expect(mockSubscriptionRepository.create).toHaveBeenCalledWith({
-        ...validCreateData,
-        passwordHash: "hashedPassword",
-      });
-      expect(result.id).toBe("sub_123");
-      expect(result.email).toBe("test@example.com");
+      expect(result.maxSlots).toBe(4);
+      expect(result.availableSlots).toBe(3);
+      expect(result).not.toHaveProperty("passwordCiphertext");
+      expect(result).not.toHaveProperty("passwordHash");
     });
 
-    it("should throw error if service provider not found", async () => {
-      mockServiceProviderRepository.findById.mockResolvedValue(null);
+    it("throws when the service provider does not exist", async () => {
+      serviceProviderRepository.findById.mockResolvedValue(null);
 
-      await expect(
-        subscriptionService.createSubscription(validCreateData)
-      ).rejects.toThrow("Service provider not found");
-
-      expect(mockServiceProviderRepository.findById).toHaveBeenCalledWith(
-        "sp_123"
+      await expect(service.createSubscription(validCreateData)).rejects.toThrow(
+        "Service provider not found"
       );
-      expect(mockSubscriptionRepository.existsByEmail).not.toHaveBeenCalled();
-      expect(mockSubscriptionRepository.create).not.toHaveBeenCalled();
+      expect(subscriptionRepository.create).not.toHaveBeenCalled();
     });
 
-    it("should throw error if email already exists", async () => {
-      mockServiceProviderRepository.findById.mockResolvedValue({
-        ...mockServiceProvider,
-        supportedCountries: [
-          {
-            country: {
-              id: "country_123",
-              name: "United States",
-              code: "US",
-              alpha3: "USA",
-              isActive: true,
-              createdAt: new Date(),
-              updatedAt: new Date(),
-            },
-          },
-        ],
-      });
-      mockServiceProviderRepository.getSupportedCountries.mockResolvedValue([
-        {
-          id: "country_123",
-          name: "United States",
-          code: "US",
-          alpha3: "USA",
-          isActive: true,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      ]);
-      // Mock country validation
-      mockCountryRepository.findById.mockResolvedValue({
-        id: "country_123",
-        name: "United States",
-        code: "US",
-        alpha3: "USA",
-        isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-      mockSubscriptionRepository.existsByEmail.mockResolvedValue(true);
+    it("throws when the email already exists", async () => {
+      subscriptionRepository.existsByEmail.mockResolvedValue(true);
 
-      await expect(
-        subscriptionService.createSubscription(validCreateData)
-      ).rejects.toThrow("A subscription with this email already exists");
-
-      expect(mockSubscriptionRepository.existsByEmail).toHaveBeenCalledWith(
-        "test@example.com"
+      await expect(service.createSubscription(validCreateData)).rejects.toThrow(
+        "A subscription with this email already exists"
       );
-      expect(mockSubscriptionRepository.create).not.toHaveBeenCalled();
+      expect(subscriptionRepository.create).not.toHaveBeenCalled();
     });
 
-    it("should throw error if name is empty", async () => {
-      const invalidData = { ...validCreateData, name: "" };
-
+    it("rejects an empty name, invalid email, short password, and invalid maxSlots", async () => {
       await expect(
-        subscriptionService.createSubscription(invalidData)
+        service.createSubscription({ ...validCreateData, name: "" })
       ).rejects.toThrow("Subscription name is required");
-
-      expect(mockServiceProviderRepository.findById).not.toHaveBeenCalled();
-    });
-
-    it("should throw error if email is invalid", async () => {
-      const invalidData = { ...validCreateData, email: "invalid-email" };
-
       await expect(
-        subscriptionService.createSubscription(invalidData)
-      ).rejects.toThrow("Invalid email format");
-
-      expect(mockServiceProviderRepository.findById).not.toHaveBeenCalled();
-    });
-
-    it("should throw error if password is too short", async () => {
-      const invalidData = { ...validCreateData, password: "123" };
-
+        service.createSubscription({ ...validCreateData, email: "invalid-email" })
+      ).rejects.toThrow("A valid email is required");
       await expect(
-        subscriptionService.createSubscription(invalidData)
+        service.createSubscription({ ...validCreateData, password: "123" })
       ).rejects.toThrow("Password must be at least 6 characters long");
-
-      expect(mockServiceProviderRepository.findById).not.toHaveBeenCalled();
-    });
-
-    it("should throw error if available slots is invalid", async () => {
-      const invalidData = { ...validCreateData, availableSlots: 0 };
-
       await expect(
-        subscriptionService.createSubscription(invalidData)
-      ).rejects.toThrow("Available slots must be at least 1");
-
-      expect(mockServiceProviderRepository.findById).not.toHaveBeenCalled();
+        service.createSubscription({ ...validCreateData, maxSlots: 0 })
+      ).rejects.toBeInstanceOf(ValidationError);
+      await expect(
+        service.createSubscription({ ...validCreateData, maxSlots: 0 })
+      ).rejects.toThrow("Max slots must be between 1 and 100");
+      expect(serviceProviderRepository.findById).not.toHaveBeenCalled();
     });
   });
 
   describe("getSubscriptionById", () => {
-    const mockSubscription = {
-      id: "sub_123",
-      serviceProviderId: "sp_123",
-      countryId: "country_123",
-      name: "Netflix Premium",
-      email: "test@example.com",
-      passwordHash: "hashedPassword",
-      availableSlots: 4,
-      expiresAt: null,
-      renewalInfo: null,
-      userPrice: { toString: () => "15.99" } as any,
-      currencyId: "cmc6lpjqw00009utlsvz3enyx",
-      metadata: null,
-      isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+    it("returns a response with available slots derived from occupancy", async () => {
+      subscriptionRepository.findById.mockResolvedValue(subscription());
 
-    it("should return subscription successfully", async () => {
-      mockSubscriptionRepository.findById.mockResolvedValue(mockSubscription);
+      const result = await service.getSubscriptionById("sub_123");
 
-      const result = await subscriptionService.getSubscriptionById("sub_123");
-
-      expect(mockSubscriptionRepository.findById).toHaveBeenCalledWith(
-        "sub_123",
-        true
-      );
-      expect(result.id).toBe("sub_123");
-      expect(result.email).toBe("test@example.com");
+      expect(subscriptionRepository.findById).toHaveBeenCalledWith("sub_123");
+      expect(result.availableSlots).toBe(3);
+      expect(result.maxSlots).toBe(4);
     });
 
-    it("should handle empty ID by returning subscription", async () => {
-      mockSubscriptionRepository.findById.mockResolvedValue(mockSubscription);
+    it("throws when the subscription is missing", async () => {
+      subscriptionRepository.findById.mockResolvedValue(null);
 
-      const result = await subscriptionService.getSubscriptionById("");
-
-      expect(mockSubscriptionRepository.findById).toHaveBeenCalledWith(
-        "",
-        true
-      );
-      expect(result.id).toBe("sub_123");
-    });
-
-    it("should throw error if subscription not found", async () => {
-      mockSubscriptionRepository.findById.mockResolvedValue(null);
-
-      await expect(
-        subscriptionService.getSubscriptionById("sub_nonexistent")
-      ).rejects.toThrow("Subscription not found");
-
-      expect(mockSubscriptionRepository.findById).toHaveBeenCalledWith(
-        "sub_nonexistent",
-        true
+      await expect(service.getSubscriptionById("missing")).rejects.toThrow(
+        "Subscription not found"
       );
     });
   });
 
   describe("getSubscriptions", () => {
-    const mockSubscriptions = [
-      {
-        id: "sub_1",
-        serviceProviderId: "sp_123",
-        countryId: "country_123",
-        name: "Netflix Premium",
-        email: "test1@example.com",
-        passwordHash: "hashedPassword",
-        availableSlots: 4,
-        expiresAt: null,
-        renewalInfo: null,
-        userPrice: { toString: () => "15.99" } as any,
-        currencyId: "cmc6lpjqw00009utlsvz3enyx",
-        metadata: null,
-        isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-      {
-        id: "sub_2",
-        serviceProviderId: "sp_123",
-        countryId: "country_123",
-        name: "Netflix Basic",
-        email: "test2@example.com",
-        passwordHash: "hashedPassword",
-        availableSlots: 1,
-        expiresAt: null,
-        renewalInfo: null,
-        userPrice: { toString: () => "8.99" } as any,
-        currencyId: "cmc6lpjqw00009utlsvz3enyx",
-        metadata: null,
-        isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-    ];
-
-    it("should return paginated subscriptions", async () => {
-      mockSubscriptionRepository.findMany.mockResolvedValue({
-        subscriptions: mockSubscriptions,
+    it("returns the repository page", async () => {
+      subscriptionRepository.findMany.mockResolvedValue({
+        subscriptions: [subscription(), subscription({ id: "sub_2", occupiedSlots: 4 })],
         total: 2,
       });
 
-      const result = await subscriptionService.getSubscriptions({
-        page: 1,
-        limit: 10,
-      });
+      const result = await service.getSubscriptions({ page: 1, limit: 10 });
 
-      expect(mockSubscriptionRepository.findMany).toHaveBeenCalledWith({
-        page: 1,
-        limit: 10,
-      });
-      expect(result.subscriptions).toHaveLength(2);
       expect(result.total).toBe(2);
-      expect(result.page).toBe(1);
-      expect(result.limit).toBe(10);
+      expect(result.subscriptions[0].availableSlots).toBe(3);
+      expect(result.subscriptions[1].availableSlots).toBe(0);
       expect(result.hasNext).toBe(false);
       expect(result.hasPrevious).toBe(false);
     });
 
-    it("should return default pagination if no options provided", async () => {
-      mockSubscriptionRepository.findMany.mockResolvedValue({
+    it("uses page 1 when page is omitted or zero", async () => {
+      subscriptionRepository.findMany.mockResolvedValue({
         subscriptions: [],
         total: 0,
       });
 
-      const result = await subscriptionService.getSubscriptions();
-
-      expect(mockSubscriptionRepository.findMany).toHaveBeenCalledWith(
-        undefined
-      );
-      expect(result.page).toBe(1);
-      expect(result.limit).toBe(10);
-    });
-
-    it("should handle page 0 by using default pagination", async () => {
-      mockSubscriptionRepository.findMany.mockResolvedValue({
-        subscriptions: [],
-        total: 0,
+      await expect(service.getSubscriptions()).resolves.toMatchObject({
+        page: 1,
+        limit: 10,
       });
-
-      const result = await subscriptionService.getSubscriptions({ page: 0 });
-
-      expect(result.page).toBe(1); // Uses default page 1
-      expect(result.limit).toBe(10);
-    });
-
-    it("should handle high limit by accepting it", async () => {
-      mockSubscriptionRepository.findMany.mockResolvedValue({
-        subscriptions: [],
-        total: 0,
+      await expect(service.getSubscriptions({ page: 0 })).resolves.toMatchObject({
+        page: 1,
       });
-
-      const result = await subscriptionService.getSubscriptions({ limit: 101 });
-
-      expect(result.limit).toBe(101); // Accepts the high limit
     });
   });
 
   describe("updateSubscription", () => {
-    const mockExistingSubscription = {
-      id: "sub_123",
-      serviceProviderId: "sp_123",
-      countryId: "country_123",
-      name: "Netflix Premium",
-      email: "test@example.com",
-      passwordHash: "hashedPassword",
-      availableSlots: 4,
-      expiresAt: null,
-      renewalInfo: null,
-      userPrice: { toString: () => "15.99" } as any,
-      currencyId: "cmc6lpjqw00009utlsvz3enyx",
-      metadata: null,
-      isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+    it("re-encrypts a replacement password and clears the reset flag", async () => {
+      const existing = subscription({ maxSlots: 4, occupiedSlots: 1 });
+      const updated = subscription({ name: "Netflix Premium Updated", maxSlots: 5 });
+      subscriptionRepository.findById
+        .mockResolvedValueOnce(existing)
+        .mockResolvedValueOnce(updated);
+      subscriptionRepository.update.mockResolvedValue(updated);
 
-    const updateData = {
-      name: "Netflix Premium Updated",
-      availableSlots: 5,
-    };
-
-    const mockUpdatedSubscription = {
-      ...mockExistingSubscription,
-      name: "Netflix Premium Updated",
-      availableSlots: 5,
-      updatedAt: new Date(),
-    };
-
-    it("should update subscription successfully", async () => {
-      // Mock first findById call (existence check)
-      mockSubscriptionRepository.findById
-        .mockResolvedValueOnce(mockExistingSubscription)
-        // Mock second findById call (get updated data)
-        .mockResolvedValueOnce(mockUpdatedSubscription);
-
-      mockSubscriptionRepository.update.mockResolvedValue(
-        mockUpdatedSubscription
-      );
-
-      const result = await subscriptionService.updateSubscription(
-        "sub_123",
-        updateData
-      );
-
-      expect(mockSubscriptionRepository.findById).toHaveBeenCalledWith(
-        "sub_123"
-      );
-      expect(mockSubscriptionRepository.update).toHaveBeenCalledWith(
-        "sub_123",
-        updateData
-      );
-      expect(result.name).toBe("Netflix Premium Updated");
-      expect(result.availableSlots).toBe(5);
-    });
-
-    it("should update subscription with password hashing", async () => {
-      const updateDataWithPassword = {
-        ...updateData,
+      const result = await service.updateSubscription("sub_123", {
+        name: "Netflix Premium Updated",
+        maxSlots: 5,
         password: "newPassword123",
-      };
-      mockSubscriptionRepository.findById.mockResolvedValue(
-        mockExistingSubscription
-      );
-      mockBcrypt.hash.mockResolvedValue("newHashedPassword" as never);
-      mockSubscriptionRepository.update.mockResolvedValue(
-        mockUpdatedSubscription
-      );
+      });
 
-      await subscriptionService.updateSubscription(
+      expect(subscriptionRepository.update).toHaveBeenCalledWith(
         "sub_123",
-        updateDataWithPassword
-      );
-
-      expect(mockBcrypt.hash).toHaveBeenCalledWith("newPassword123", 10);
-      expect(mockSubscriptionRepository.update).toHaveBeenCalledWith(
-        "sub_123",
-        {
+        expect.objectContaining({
           name: "Netflix Premium Updated",
-          availableSlots: 5,
-          passwordHash: "newHashedPassword",
-        }
+          maxSlots: 5,
+          needsCredentialReset: false,
+          passwordCiphertext: expect.any(String),
+          passwordIv: expect.any(String),
+          passwordTag: expect.any(String),
+        })
       );
+      const payload = subscriptionRepository.update.mock.calls[0][1];
+      expect(payload).not.toHaveProperty("password");
+      expect(payload).not.toHaveProperty("passwordHash");
+      expect(slotAssignmentService.processPending).toHaveBeenCalledWith(
+        updated.serviceProviderId,
+        updated.countryId
+      );
+      expect(result.availableSlots).toBe(4);
     });
 
-    it("should handle empty ID by checking existence", async () => {
-      mockSubscriptionRepository.findById.mockResolvedValue(
-        mockExistingSubscription
+    it("rejects maxSlots below the number of active slots", async () => {
+      subscriptionRepository.findById.mockResolvedValue(
+        subscription({ occupiedSlots: 3, maxSlots: 4 })
       );
-      mockSubscriptionRepository.update.mockResolvedValue(
-        mockUpdatedSubscription
-      );
-
-      const result = await subscriptionService.updateSubscription(
-        "",
-        updateData
-      );
-
-      expect(mockSubscriptionRepository.findById).toHaveBeenCalledWith("");
-      expect(result.name).toBe("Netflix Premium Updated");
-    });
-
-    it("should throw error if subscription not found", async () => {
-      mockSubscriptionRepository.findById.mockResolvedValue(null);
 
       await expect(
-        subscriptionService.updateSubscription("sub_nonexistent", updateData)
+        service.updateSubscription("sub_123", { maxSlots: 2 })
+      ).rejects.toThrow(
+        "Max slots cannot be lower than the number of active slots"
+      );
+      expect(subscriptionRepository.update).not.toHaveBeenCalled();
+    });
+
+    it("throws when the subscription does not exist", async () => {
+      subscriptionRepository.findById.mockResolvedValue(null);
+
+      await expect(
+        service.updateSubscription("missing", { name: "Updated" })
       ).rejects.toThrow("Subscription not found");
-
-      expect(mockSubscriptionRepository.findById).toHaveBeenCalledWith(
-        "sub_nonexistent"
-      );
-      expect(mockSubscriptionRepository.update).not.toHaveBeenCalled();
-    });
-
-    it("should throw error if new email already exists", async () => {
-      const updateDataWithEmail = {
-        ...updateData,
-        email: "newemail@example.com",
-      };
-      mockSubscriptionRepository.findById.mockResolvedValue(
-        mockExistingSubscription
-      );
-      mockSubscriptionRepository.existsByEmail.mockResolvedValue(true);
-
-      await expect(
-        subscriptionService.updateSubscription("sub_123", updateDataWithEmail)
-      ).rejects.toThrow("A subscription with this email already exists");
-
-      expect(mockSubscriptionRepository.existsByEmail).toHaveBeenCalledWith(
-        "newemail@example.com",
-        "sub_123"
-      );
-      expect(mockSubscriptionRepository.update).not.toHaveBeenCalled();
     });
   });
 
   describe("deleteSubscription", () => {
-    const mockSubscription = {
-      id: "sub_123",
-      serviceProviderId: "sp_123",
-      countryId: "country_123",
-      name: "Netflix Premium",
-      email: "test@example.com",
-      passwordHash: "hashedPassword",
-      availableSlots: 4,
-      expiresAt: null,
-      renewalInfo: null,
-      userPrice: { toString: () => "15.99" } as any,
-      currencyId: "cmc6lpjqw00009utlsvz3enyx",
-      metadata: null,
-      isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+    it("deletes an existing subscription", async () => {
+      subscriptionRepository.findById.mockResolvedValue(subscription());
 
-    it("should delete subscription successfully", async () => {
-      mockSubscriptionRepository.findById.mockResolvedValue(mockSubscription);
-      mockSubscriptionRepository.delete.mockResolvedValue();
+      await service.deleteSubscription("sub_123");
 
-      await subscriptionService.deleteSubscription("sub_123");
-
-      expect(mockSubscriptionRepository.findById).toHaveBeenCalledWith(
-        "sub_123"
-      );
-      expect(mockSubscriptionRepository.delete).toHaveBeenCalledWith("sub_123");
+      expect(subscriptionRepository.delete).toHaveBeenCalledWith("sub_123");
     });
 
-    it("should handle empty ID by checking existence", async () => {
-      mockSubscriptionRepository.findById.mockResolvedValue(mockSubscription);
-      mockSubscriptionRepository.delete.mockResolvedValue();
+    it("throws when the subscription does not exist", async () => {
+      subscriptionRepository.findById.mockResolvedValue(null);
 
-      await subscriptionService.deleteSubscription("");
-
-      expect(mockSubscriptionRepository.findById).toHaveBeenCalledWith("");
-      expect(mockSubscriptionRepository.delete).toHaveBeenCalledWith("");
-    });
-
-    it("should throw error if subscription not found", async () => {
-      mockSubscriptionRepository.findById.mockResolvedValue(null);
-
-      await expect(
-        subscriptionService.deleteSubscription("sub_nonexistent")
-      ).rejects.toThrow("Subscription not found");
-
-      expect(mockSubscriptionRepository.findById).toHaveBeenCalledWith(
-        "sub_nonexistent"
+      await expect(service.deleteSubscription("missing")).rejects.toThrow(
+        "Subscription not found"
       );
-      expect(mockSubscriptionRepository.delete).not.toHaveBeenCalled();
+      expect(subscriptionRepository.delete).not.toHaveBeenCalled();
     });
   });
 
   describe("getSubscriptionsByServiceProvider", () => {
-    const mockServiceProvider = {
-      id: "sp_123",
-      name: "Netflix",
-      description: "Streaming service",
-      metadata: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+    it("returns subscriptions for an existing provider", async () => {
+      subscriptionRepository.findByServiceProviderId.mockResolvedValue([
+        subscription(),
+      ]);
 
-    const mockSubscriptions = [
-      {
-        id: "sub_1",
-        serviceProviderId: "sp_123",
-        countryId: "country_123",
-        name: "Netflix Premium",
-        email: "test1@example.com",
-        passwordHash: "hashedPassword",
-        availableSlots: 4,
-        expiresAt: null,
-        renewalInfo: null,
-        userPrice: { toString: () => "15.99" } as any,
-        currencyId: "cmc6lpjqw00009utlsvz3enyx",
-        metadata: null,
-        isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-    ];
+      const result = await service.getSubscriptionsByServiceProvider("sp_123");
 
-    it("should return subscriptions by service provider successfully", async () => {
-      mockSubscriptionRepository.findByServiceProviderId.mockResolvedValue(
-        mockSubscriptions
-      );
-
-      const result =
-        await subscriptionService.getSubscriptionsByServiceProvider("sp_123");
-
-      expect(
-        mockSubscriptionRepository.findByServiceProviderId
-      ).toHaveBeenCalledWith("sp_123");
       expect(result).toHaveLength(1);
-      expect(result[0].id).toBe("sub_1");
+      expect(result[0].availableSlots).toBe(3);
     });
 
-    it("should handle empty service provider ID", async () => {
-      mockSubscriptionRepository.findByServiceProviderId.mockResolvedValue([]);
+    it("throws when the provider does not exist", async () => {
+      serviceProviderRepository.findById.mockResolvedValue(null);
 
-      const result =
-        await subscriptionService.getSubscriptionsByServiceProvider("");
-
-      expect(
-        mockSubscriptionRepository.findByServiceProviderId
-      ).toHaveBeenCalledWith("");
-      expect(result).toHaveLength(0);
-    });
-
-    it("should return empty array for non-existent service provider", async () => {
-      mockSubscriptionRepository.findByServiceProviderId.mockResolvedValue([]);
-
-      const result =
-        await subscriptionService.getSubscriptionsByServiceProvider(
-          "sp_nonexistent"
-        );
-
-      expect(
-        mockSubscriptionRepository.findByServiceProviderId
-      ).toHaveBeenCalledWith("sp_nonexistent");
-      expect(result).toHaveLength(0);
+      await expect(
+        service.getSubscriptionsByServiceProvider("missing")
+      ).rejects.toThrow("Service provider not found");
     });
   });
 });

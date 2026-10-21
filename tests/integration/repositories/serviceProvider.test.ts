@@ -107,7 +107,7 @@ describe("PrismaServiceProviderRepository", () => {
       mockPrisma.$transaction.mockRejectedValue(error);
 
       await expect(repository.create(createData)).rejects.toThrow(
-        "A service provider with this name already exists"
+        "Unique constraint failed"
       );
     });
 
@@ -117,7 +117,7 @@ describe("PrismaServiceProviderRepository", () => {
       mockPrisma.$transaction.mockRejectedValue(error);
 
       await expect(repository.create(createData)).rejects.toThrow(
-        "Failed to create service provider: Database connection failed"
+        "Database connection failed"
       );
     });
   });
@@ -141,7 +141,6 @@ describe("PrismaServiceProviderRepository", () => {
 
       expect(mockPrisma.serviceProvider.findUnique).toHaveBeenCalledWith({
         where: { id: "sp_123" },
-        include: {},
       });
       expect(result).toBeInstanceOf(ServiceProvider);
       expect(result?.id).toBe("sp_123");
@@ -160,7 +159,7 @@ describe("PrismaServiceProviderRepository", () => {
       mockPrisma.serviceProvider.findUnique.mockRejectedValue(error);
 
       await expect(repository.findById("sp_123")).rejects.toThrow(
-        "Failed to find service provider: Database connection failed"
+        "Database connection failed"
       );
     });
   });
@@ -273,7 +272,7 @@ describe("PrismaServiceProviderRepository", () => {
       mockPrisma.serviceProvider.findMany.mockRejectedValue(error);
 
       await expect(repository.findMany()).rejects.toThrow(
-        "Failed to fetch service providers: Database connection failed"
+        "Database connection failed"
       );
     });
   });
@@ -363,7 +362,7 @@ describe("PrismaServiceProviderRepository", () => {
 
       await expect(
         repository.update("sp_nonexistent", updateData)
-      ).rejects.toThrow("Service provider not found");
+      ).rejects.toThrow("Record not found");
     });
 
     it("should throw error for duplicate name (P2002)", async () => {
@@ -373,7 +372,7 @@ describe("PrismaServiceProviderRepository", () => {
       mockPrisma.$transaction.mockRejectedValue(error);
 
       await expect(repository.update("sp_123", updateData)).rejects.toThrow(
-        "A service provider with this name already exists"
+        "Unique constraint failed"
       );
     });
   });
@@ -395,7 +394,7 @@ describe("PrismaServiceProviderRepository", () => {
       mockPrisma.serviceProvider.delete.mockRejectedValue(error);
 
       await expect(repository.delete("sp_nonexistent")).rejects.toThrow(
-        "Service provider not found"
+        "Record not found"
       );
     });
 
@@ -405,7 +404,7 @@ describe("PrismaServiceProviderRepository", () => {
       mockPrisma.serviceProvider.delete.mockRejectedValue(error);
 
       await expect(repository.delete("sp_123")).rejects.toThrow(
-        "Cannot delete service provider: it has associated subscriptions"
+        "Foreign key constraint failed"
       );
     });
   });
@@ -451,7 +450,7 @@ describe("PrismaServiceProviderRepository", () => {
       mockPrisma.serviceProvider.count.mockRejectedValue(error);
 
       await expect(repository.existsByName("Netflix")).rejects.toThrow(
-        "Failed to check service provider name: Database connection failed"
+        "Database connection failed"
       );
     });
   });

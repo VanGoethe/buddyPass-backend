@@ -1,280 +1,130 @@
-/**
- * User Controller Implementation
- */
-
-import { Request, Response } from "express";
-import {
-  IUserService,
-  RegisterRequest,
-  LoginRequest,
-  GoogleOAuthUser,
-  TokenPayload,
-  ChangePasswordRequest,
-} from "../../types/users";
+import { Request, Response, NextFunction } from "express";
+import { IUserService, GoogleProfile } from "../../types/users";
+import { sendSuccess } from "../../utils/http";
+import { UnauthorizedError } from "../../utils/errors";
 
 export class UserController {
   constructor(private userService: IUserService) {}
 
-  /**
-   * Register new user with email and password
-   * POST /users/register
-   */
-  async register(req: Request, res: Response): Promise<void> {
+  register = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
-      const { email, password, name }: RegisterRequest = req.body;
-      console.log("Register request:", req.body);
-
-      const result = await this.userService.register({
-        email,
-        password,
-        name,
-      });
-
-      if (!result.success) {
-        res.status(409).json(result);
-        return;
-      }
-
-      res.status(201).json(result);
+      const session = await this.userService.register(req.body);
+      sendSuccess(res, session, "User registered successfully", 201);
     } catch (error) {
-      console.error("Registration error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Internal server error",
-      });
+      next(error);
     }
-  }
+  };
 
-  /**
-   * Login user with email and password
-   * POST /users/login
-   */
-  async login(req: Request, res: Response): Promise<void> {
+  login = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
-      const { email, password }: LoginRequest = req.body;
-
-      const result = await this.userService.login({
-        email,
-        password,
-      });
-
-      if (!result.success) {
-        res.status(401).json(result);
-        return;
-      }
-
-      res.json(result);
+      const session = await this.userService.login(req.body);
+      sendSuccess(res, session, "Login successful");
     } catch (error) {
-      console.error("Login error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Internal server error",
-      });
+      next(error);
     }
-  }
+  };
 
-  /**
-   * Logout user (client-side token disposal)
-   * POST /users/logout
-   */
-  async logout(req: Request, res: Response): Promise<void> {
+  refresh = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
-      const result = await this.userService.logout();
-      res.json(result);
+      const session = await this.userService.refresh(req.body.refreshToken);
+      sendSuccess(res, session, "Token refreshed");
     } catch (error) {
-      console.error("Logout error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Internal server error",
-      });
+      next(error);
     }
-  }
+  };
 
-  /**
-   * Get current user profile
-   * GET /users/profile
-   */
-  async getProfile(req: Request, res: Response): Promise<void> {
+  logout = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      await this.userService.logout(req.body.refreshToken);
+      sendSuccess(res, null, "Logout successful");
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  getProfile = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
       if (!req.user) {
-        res.status(401).json({
-          success: false,
-          error: {
-            code: "NOT_AUTHENTICATED",
-            message: "Authentication required",
-          },
-        });
-        return;
+        throw new UnauthorizedError();
       }
-
-      const result = await this.userService.getProfile(req.user.id);
-
-      if (!result.success) {
-        res.status(404).json(result);
-        return;
-      }
-
-      res.json(result);
+      const user = await this.userService.getProfile(req.user.id);
+      sendSuccess(res, { user });
     } catch (error) {
-      console.error("Get profile error:", error);
-      res.status(500).json({
-        success: false,
-        error: {
-          code: "SERVER_ERROR",
-          message: "Internal server error",
-        },
-      });
+      next(error);
     }
-  }
+  };
 
-  /**
-   * Update user profile
-   * PUT /users/profile
-   */
-  async updateProfile(req: Request, res: Response): Promise<void> {
+  updateProfile = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
       if (!req.user) {
-        res.status(401).json({
-          success: false,
-          error: {
-            code: "NOT_AUTHENTICATED",
-            message: "Authentication required",
-          },
-        });
-        return;
+        throw new UnauthorizedError();
       }
-
-      const { name, avatar } = req.body;
-      const result = await this.userService.updateProfile(req.user.id, {
-        name,
-        avatar,
-      });
-
-      if (!result.success) {
-        res.status(400).json(result);
-        return;
-      }
-
-      res.json(result);
+      const user = await this.userService.updateProfile(req.user.id, req.body);
+      sendSuccess(res, { user }, "Profile updated successfully");
     } catch (error) {
-      console.error("Update profile error:", error);
-      res.status(500).json({
-        success: false,
-        error: {
-          code: "SERVER_ERROR",
-          message: "Internal server error",
-        },
-      });
+      next(error);
     }
-  }
+  };
 
-  /**
-   * Change user password
-   * PUT /users/change-password
-   */
-  async changePassword(req: Request, res: Response): Promise<void> {
+  changePassword = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
       if (!req.user) {
-        res.status(401).json({
-          success: false,
-          error: {
-            code: "NOT_AUTHENTICATED",
-            message: "Authentication required",
-          },
-        });
-        return;
+        throw new UnauthorizedError();
       }
-
-      const { currentPassword, newPassword }: ChangePasswordRequest = req.body;
-      const result = await this.userService.changePassword(req.user.id, {
-        currentPassword,
-        newPassword,
-      });
-
-      if (!result.success) {
-        res.status(400).json(result);
-        return;
-      }
-
-      res.json(result);
+      await this.userService.changePassword(req.user.id, req.body);
+      sendSuccess(res, null, "Password changed successfully");
     } catch (error) {
-      console.error("Change password error:", error);
-      res.status(500).json({
-        success: false,
-        error: {
-          code: "SERVER_ERROR",
-          message: "Internal server error",
-        },
-      });
+      next(error);
     }
-  }
+  };
 
-  /**
-   * Google OAuth callback handler
-   * GET /users/auth/google/callback
-   */
-  async googleCallback(req: Request, res: Response): Promise<void> {
+  googleCallback = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     try {
-      // Extract Google user data from Passport
-      const googleUser = req.user as any;
-
-      if (!googleUser) {
-        res.status(401).json({
-          success: false,
-          message: "Google authentication failed",
-        });
-        return;
+      const profile = req.user as unknown as GoogleProfile | undefined;
+      if (!profile?.googleId || !profile.email) {
+        throw new UnauthorizedError("Google authentication failed");
       }
-
-      // Handle Google OAuth through service
-      const user = await this.userService.handleGoogleOAuth({
-        googleId: googleUser.id,
-        email: googleUser.emails[0].value,
-        name: googleUser.displayName,
-        avatar: googleUser.photos?.[0]?.value,
-      });
-
-      // Generate access token
-      const accessToken = this.userService.generateAccessToken({
-        userId: user.id,
-        email: user.email,
-        role: user.role,
-      });
-
-      // Convert to response format
-      const userResponse = {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        avatar: user.avatar,
-        provider: user.provider,
-        role: user.role,
-        isVerified: user.isVerified,
-        createdAt: user.createdAt,
-        updatedAt: user.updatedAt,
-      };
-
-      res.json({
-        success: true,
-        message: "Google authentication successful",
-        data: {
-          user: userResponse,
-          accessToken,
-        },
-      });
+      const user = await this.userService.handleGoogleOAuth(profile);
+      const session = await this.userService.issueSession(user);
+      sendSuccess(res, session, "Google authentication successful");
     } catch (error) {
-      console.error("Google callback error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Internal server error",
-      });
+      next(error);
     }
-  }
+  };
 }
 
-// Export a factory function to create controller instance
 export const createUserController = (
   userService: IUserService
-): UserController => {
-  return new UserController(userService);
-};
+): UserController => new UserController(userService);
