@@ -1,12 +1,15 @@
-/**
- * User Service Authentication Unit Tests
- */
-
+import { PrismaClient } from "@prisma/client";
 import { UserService } from "../../../src/services/users";
 import { IUserRepository, User } from "../../../src/types/users";
 import { UserRole } from "@prisma/client";
+import {
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+  UnauthorizedError,
+} from "../../../src/utils/errors";
+import { accessTokenSignOptions } from "../../../src/config/auth";
 
-// Mock the dependencies completely
 jest.mock("jsonwebtoken");
 jest.mock("bcryptjs");
 
@@ -16,9 +19,21 @@ import bcrypt from "bcryptjs";
 const mockJwt = jwt as jest.Mocked<typeof jwt>;
 const mockBcrypt = bcrypt as jest.Mocked<typeof bcrypt>;
 
+function createPrisma(): PrismaClient {
+  return {
+    refreshToken: {
+      create: jest.fn().mockResolvedValue({ id: "refresh-row" }),
+      findUnique: jest.fn().mockResolvedValue(null),
+      update: jest.fn().mockResolvedValue({}),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
+  } as unknown as PrismaClient;
+}
+
 describe("UserService Authentication", () => {
   let userService: UserService;
   let mockUserRepository: jest.Mocked<IUserRepository>;
+  let prisma: PrismaClient;
 
   const mockUser: User = {
     id: "user-1",
@@ -37,616 +52,362 @@ describe("UserService Authentication", () => {
   };
 
   beforeEach(() => {
-    // Reset mocks
     jest.clearAllMocks();
-
-    // Setup repository mock
+    prisma = createPrisma();
     mockUserRepository = {
       findById: jest.fn(),
       findByEmail: jest.fn(),
       findByGoogleId: jest.fn(),
       create: jest.fn(),
-      update: jest.fn(),
+      updateProfile: jest.fn(),
+      updateRole: jest.fn(),
+      updateStatus: jest.fn(),
       delete: jest.fn(),
       findMany: jest.fn(),
       count: jest.fn(),
-    } as jest.Mocked<IUserRepository>;
-
-    userService = new UserService(mockUserRepository);
+    };
+    userService = new UserService(mockUserRepository, prisma);
   });
 
   describe("hashPassword", () => {
-    it("should hash password with correct salt rounds", async () => {
-      const password = "testPassword123!";
-      const hashedPassword = "hashed-password";
+    it("hashes with the configured salt rounds", async () => {
+      (mockBcrypt.hash as jest.Mock).mockResolvedValue("hashed-password");
 
-      (mockBcrypt.hash as jest.Mock).mockResolvedValue(hashedPassword);
-
-      const result = await userService.hashPassword(password);
-
-      expect(mockBcrypt.hash).toHaveBeenCalledWith(password, 12);
-      expect(result).toBe(hashedPassword);
-    });
-
-    it("should throw error when hashing fails", async () => {
-      const password = "testPassword123!";
-
-      (mockBcrypt.hash as jest.Mock).mockRejectedValue(
-        new Error("Hashing failed")
+      await expect(userService.hashPassword("testPassword123!")).resolves.toBe(
+        "hashed-password"
       );
-
-      await expect(userService.hashPassword(password)).rejects.toThrow(
-        "Hashing failed"
-      );
+      expect(mockBcrypt.hash).toHaveBeenCalledWith("testPassword123!", 12);
     });
   });
 
   describe("comparePassword", () => {
-    it("should return true for matching passwords", async () => {
-      const password = "testPassword123!";
-      const hash = "hashed-password";
-
+    it("returns the bcrypt comparison result", async () => {
       (mockBcrypt.compare as jest.Mock).mockResolvedValue(true);
 
-      const result = await userService.comparePassword(password, hash);
-
-      expect(mockBcrypt.compare).toHaveBeenCalledWith(password, hash);
-      expect(result).toBe(true);
-    });
-
-    it("should return false for non-matching passwords", async () => {
-      const password = "testPassword123!";
-      const hash = "hashed-password";
-
-      (mockBcrypt.compare as jest.Mock).mockResolvedValue(false);
-
-      const result = await userService.comparePassword(password, hash);
-
-      expect(mockBcrypt.compare).toHaveBeenCalledWith(password, hash);
-      expect(result).toBe(false);
-    });
-
-    it("should throw error when comparison fails", async () => {
-      const password = "testPassword123!";
-      const hash = "hashed-password";
-
-      (mockBcrypt.compare as jest.Mock).mockRejectedValue(
-        new Error("Comparison failed")
-      );
-
-      await expect(userService.comparePassword(password, hash)).rejects.toThrow(
-        "Comparison failed"
+      await expect(
+        userService.comparePassword("testPassword123!", "hashed-password")
+      ).resolves.toBe(true);
+      expect(mockBcrypt.compare).toHaveBeenCalledWith(
+        "testPassword123!",
+        "hashed-password"
       );
     });
   });
 
   describe("generateAccessToken", () => {
-    it("should generate access token with correct payload", () => {
+    it("signs an access token with the configured options", () => {
       const payload = {
         userId: "user-1",
         email: "test@example.com",
         role: UserRole.USER,
       };
-      const token = "generated-token";
+      (mockJwt.sign as jest.Mock).mockReturnValue("generated-token");
 
-      (mockJwt.sign as jest.Mock).mockReturnValue(token);
-
-      const result = userService.generateAccessToken(payload);
-
+      expect(userService.generateAccessToken(payload)).toBe("generated-token");
       expect(mockJwt.sign).toHaveBeenCalledWith(
         payload,
-        expect.any(String),
-        expect.objectContaining({
-          expiresIn: expect.any(String),
-        })
+        process.env.JWT_SECRET,
+        accessTokenSignOptions
       );
-      expect(result).toBe(token);
     });
   });
 
   describe("verifyAccessToken", () => {
-    it("should verify valid token and return payload", () => {
-      const token = "valid-token";
-      const payload = { userId: "user-1", email: "test@example.com" };
+    it("verifies issuer, audience, and HS256", () => {
+      const payload = {
+        userId: "user-1",
+        email: "test@example.com",
+        role: UserRole.USER,
+      };
+      mockJwt.verify.mockReturnValue(payload as never);
 
-      mockJwt.verify.mockReturnValue(payload as any);
-
-      const result = userService.verifyAccessToken(token);
-
-      expect(mockJwt.verify).toHaveBeenCalledWith(token, expect.any(String));
-      expect(result).toEqual(payload);
+      expect(userService.verifyAccessToken("valid-token")).toEqual(payload);
+      expect(mockJwt.verify).toHaveBeenCalledWith(
+        "valid-token",
+        process.env.JWT_SECRET,
+        {
+          algorithms: ["HS256"],
+          issuer: "buddypass",
+          audience: "buddypass-api",
+        }
+      );
     });
 
-    it("should return null for invalid token", () => {
-      const token = "invalid-token";
-
+    it("returns null when verification throws", () => {
       mockJwt.verify.mockImplementation(() => {
         throw new Error("Invalid token");
       });
 
-      const result = userService.verifyAccessToken(token);
-
-      expect(result).toBeNull();
-    });
-
-    it("should return null for expired token", () => {
-      const token = "expired-token";
-
-      mockJwt.verify.mockImplementation(() => {
-        const error = new Error("Token expired");
-        (error as any).name = "TokenExpiredError";
-        throw error;
-      });
-
-      const result = userService.verifyAccessToken(token);
-
-      expect(result).toBeNull();
+      expect(userService.verifyAccessToken("invalid-token")).toBeNull();
     });
   });
 
   describe("register", () => {
-    it("should register new user successfully", async () => {
+    it("returns an auth session for a new user", async () => {
       const registerData = {
         email: "newuser@example.com",
         password: "testPassword123!",
         name: "New User",
       };
-
-      const hashedPassword = "hashed-password";
-      const accessToken = "access-token";
-
       mockUserRepository.findByEmail.mockResolvedValue(null);
-      (mockBcrypt.hash as jest.Mock).mockResolvedValue(hashedPassword);
+      (mockBcrypt.hash as jest.Mock).mockResolvedValue("hashed-password");
       mockUserRepository.create.mockResolvedValue({
         ...mockUser,
         email: registerData.email,
         name: registerData.name,
-        password: hashedPassword,
+        password: "hashed-password",
       });
-      (mockJwt.sign as jest.Mock).mockReturnValue(accessToken);
+      (mockJwt.sign as jest.Mock).mockReturnValue("access-token");
 
       const result = await userService.register(registerData);
 
-      expect(mockUserRepository.findByEmail).toHaveBeenCalledWith(
-        registerData.email
-      );
-      expect(mockBcrypt.hash).toHaveBeenCalledWith(registerData.password, 12);
       expect(mockUserRepository.create).toHaveBeenCalledWith({
         email: registerData.email,
-        password: hashedPassword,
+        password: "hashed-password",
         name: registerData.name,
         provider: "local",
       });
-
-      expect(result).toMatchObject({
-        success: true,
-        message: "User registered successfully",
-        data: {
-          user: {
-            email: registerData.email,
-            name: registerData.name,
-          },
-          accessToken,
-        },
-      });
+      expect(result.user.email).toBe(registerData.email);
+      expect(result.user).not.toHaveProperty("password");
+      expect(result.accessToken).toBe("access-token");
+      expect(result.refreshToken).toEqual(expect.any(String));
+      expect(prisma.refreshToken.create).toHaveBeenCalled();
     });
 
-    it("should fail registration when user already exists", async () => {
-      const registerData = {
-        email: "existing@example.com",
-        password: "testPassword123!",
-        name: "Existing User",
-      };
-
+    it("throws ConflictError when the email already exists", async () => {
       mockUserRepository.findByEmail.mockResolvedValue(mockUser);
 
-      const result = await userService.register(registerData);
-
-      expect(result).toMatchObject({
-        success: false,
+      await expect(
+        userService.register({
+          email: "existing@example.com",
+          password: "testPassword123!",
+          name: "Existing User",
+        })
+      ).rejects.toMatchObject({
+        code: "EMAIL_EXISTS",
         message: "User with this email already exists",
       });
-
+      await expect(
+        userService.register({
+          email: "existing@example.com",
+          password: "testPassword123!",
+        })
+      ).rejects.toBeInstanceOf(ConflictError);
       expect(mockUserRepository.create).not.toHaveBeenCalled();
-    });
-
-    it("should throw error when registration fails", async () => {
-      const registerData = {
-        email: "newuser@example.com",
-        password: "testPassword123!",
-        name: "New User",
-      };
-
-      mockUserRepository.findByEmail.mockResolvedValue(null);
-      (mockBcrypt.hash as jest.Mock).mockResolvedValue("hashed-password");
-      mockUserRepository.create.mockRejectedValue(new Error("Database error"));
-
-      await expect(userService.register(registerData)).rejects.toThrow(
-        "Registration failed"
-      );
     });
   });
 
   describe("login", () => {
-    it("should login successfully with valid credentials", async () => {
-      const loginData = {
-        email: "test@example.com",
-        password: "testPassword123!",
-      };
+    const loginData = {
+      email: "test@example.com",
+      password: "testPassword123!",
+    };
 
-      const accessToken = "access-token";
-
+    it("returns an auth session and records last login", async () => {
       mockUserRepository.findByEmail.mockResolvedValue(mockUser);
       (mockBcrypt.compare as jest.Mock).mockResolvedValue(true);
-      (mockJwt.sign as jest.Mock).mockReturnValue(accessToken);
+      mockUserRepository.updateProfile.mockResolvedValue({
+        ...mockUser,
+        lastLoginAt: new Date(),
+      });
+      (mockJwt.sign as jest.Mock).mockReturnValue("access-token");
 
       const result = await userService.login(loginData);
 
-      expect(mockUserRepository.findByEmail).toHaveBeenCalledWith(
-        loginData.email
+      expect(mockUserRepository.updateProfile).toHaveBeenCalledWith(
+        mockUser.id,
+        { lastLoginAt: expect.any(Date) }
       );
-      expect(mockBcrypt.compare).toHaveBeenCalledWith(
-        loginData.password,
-        mockUser.password
-      );
-
-      expect(result).toMatchObject({
-        success: true,
-        message: "Login successful",
-        data: {
-          user: {
-            email: loginData.email,
-            name: mockUser.name,
-          },
-          accessToken,
-        },
-      });
+      expect(result.accessToken).toBe("access-token");
+      expect(result.refreshToken).toEqual(expect.any(String));
+      expect(result.user.email).toBe(loginData.email);
+      expect(result.user).not.toHaveProperty("password");
     });
 
-    it("should fail login with non-existent user", async () => {
-      const loginData = {
-        email: "nonexistent@example.com",
-        password: "testPassword123!",
-      };
-
-      mockUserRepository.findByEmail.mockResolvedValue(null);
-
-      const result = await userService.login(loginData);
-
-      expect(result).toMatchObject({
-        success: false,
-        message: "Invalid email or password",
-      });
-
-      expect(mockBcrypt.compare).not.toHaveBeenCalled();
-    });
-
-    it("should fail login with user without password (OAuth user)", async () => {
-      const loginData = {
-        email: "oauth@example.com",
-        password: "testPassword123!",
-      };
-
-      const oauthUser = { ...mockUser, password: null };
-      mockUserRepository.findByEmail.mockResolvedValue(oauthUser);
-
-      const result = await userService.login(loginData);
-
-      expect(result).toMatchObject({
-        success: false,
-        message: "Invalid email or password",
-      });
-
-      expect(mockBcrypt.compare).not.toHaveBeenCalled();
-    });
-
-    it("should fail login with incorrect password", async () => {
-      const loginData = {
-        email: "test@example.com",
-        password: "wrongPassword123!",
-      };
-
+    it("throws INVALID_CREDENTIALS for a wrong password", async () => {
       mockUserRepository.findByEmail.mockResolvedValue(mockUser);
       (mockBcrypt.compare as jest.Mock).mockResolvedValue(false);
 
-      const result = await userService.login(loginData);
-
-      expect(result).toMatchObject({
-        success: false,
+      await expect(userService.login(loginData)).rejects.toBeInstanceOf(
+        UnauthorizedError
+      );
+      await expect(userService.login(loginData)).rejects.toMatchObject({
+        code: "INVALID_CREDENTIALS",
         message: "Invalid email or password",
       });
+      expect(mockUserRepository.updateProfile).not.toHaveBeenCalled();
     });
 
-    it("should throw error when login fails", async () => {
-      const loginData = {
-        email: "test@example.com",
-        password: "testPassword123!",
-      };
+    it("throws USER_INACTIVE after a valid password when the account is inactive", async () => {
+      mockUserRepository.findByEmail.mockResolvedValue({
+        ...mockUser,
+        isActive: false,
+      });
+      (mockBcrypt.compare as jest.Mock).mockResolvedValue(true);
 
-      mockUserRepository.findByEmail.mockRejectedValue(
-        new Error("Database error")
+      await expect(userService.login(loginData)).rejects.toBeInstanceOf(
+        ForbiddenError
       );
-
-      await expect(userService.login(loginData)).rejects.toThrow(
-        "Login failed"
-      );
+      await expect(userService.login(loginData)).rejects.toMatchObject({
+        code: "USER_INACTIVE",
+      });
+      expect(mockUserRepository.updateProfile).not.toHaveBeenCalled();
     });
   });
 
-  describe("getProfile", () => {
-    it("should return user profile successfully", async () => {
-      const userId = "user-1";
-
+  describe("refresh and logout", () => {
+    it("rotates a valid refresh token into a new session", async () => {
+      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue({
+        id: "rt-1",
+        tokenHash: "stored",
+        familyId: "family-1",
+        userId: mockUser.id,
+        expiresAt: new Date(Date.now() + 60_000),
+        revokedAt: null,
+        createdAt: new Date(),
+      });
       mockUserRepository.findById.mockResolvedValue(mockUser);
+      (mockJwt.sign as jest.Mock).mockReturnValue("next-access");
 
-      const result = await userService.getProfile(userId);
+      const result = await userService.refresh("raw-refresh-token");
 
-      expect(mockUserRepository.findById).toHaveBeenCalledWith(userId);
-      expect(result).toMatchObject({
-        success: true,
-        data: {
-          user: {
-            id: mockUser.id,
-            email: mockUser.email,
-            name: mockUser.name,
-            avatar: mockUser.avatar,
-            provider: mockUser.provider,
-          },
-        },
+      expect(prisma.refreshToken.update).toHaveBeenCalledWith({
+        where: { id: "rt-1" },
+        data: { revokedAt: expect.any(Date) },
+      });
+      expect(result.accessToken).toBe("next-access");
+      expect(result.refreshToken).toEqual(expect.any(String));
+    });
+
+    it("throws when the refresh token is unknown", async () => {
+      await expect(userService.refresh("missing")).rejects.toMatchObject({
+        code: "INVALID_REFRESH_TOKEN",
       });
     });
 
-    it("should fail when user not found", async () => {
-      const userId = "non-existent-user";
+    it("revokes a known refresh token on logout", async () => {
+      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue({
+        id: "rt-1",
+        revokedAt: null,
+      });
 
+      await expect(userService.logout("raw-refresh-token")).resolves.toBeUndefined();
+      expect(prisma.refreshToken.update).toHaveBeenCalled();
+    });
+  });
+
+  describe("profile", () => {
+    it("returns a user response without a password", async () => {
+      mockUserRepository.findById.mockResolvedValue(mockUser);
+
+      const result = await userService.getProfile(mockUser.id);
+
+      expect(result).toMatchObject({
+        id: mockUser.id,
+        email: mockUser.email,
+        name: mockUser.name,
+      });
+      expect(result).not.toHaveProperty("password");
+    });
+
+    it("throws NotFoundError when the user is missing", async () => {
       mockUserRepository.findById.mockResolvedValue(null);
 
-      const result = await userService.getProfile(userId);
-
-      expect(result).toMatchObject({
-        success: false,
-        message: "User not found",
-      });
-    });
-
-    it("should throw error when profile fetch fails", async () => {
-      const userId = "user-1";
-
-      mockUserRepository.findById.mockRejectedValue(
-        new Error("Database error")
-      );
-
-      await expect(userService.getProfile(userId)).rejects.toThrow(
-        "Failed to get user profile"
+      await expect(userService.getProfile("missing")).rejects.toBeInstanceOf(
+        NotFoundError
       );
     });
-  });
 
-  describe("updateProfile", () => {
-    it("should update user profile successfully", async () => {
-      const userId = "user-1";
-      const updateData = {
+    it("updates the profile through updateProfile", async () => {
+      mockUserRepository.findById.mockResolvedValue(mockUser);
+      mockUserRepository.updateProfile.mockResolvedValue({
+        ...mockUser,
         name: "Updated Name",
-        avatar: "new-avatar-url",
-      };
-
-      const updatedUser = {
-        ...mockUser,
-        name: updateData.name,
-        avatar: updateData.avatar,
-      };
-
-      mockUserRepository.findById.mockResolvedValue(mockUser);
-      mockUserRepository.update.mockResolvedValue(updatedUser);
-
-      const result = await userService.updateProfile(userId, updateData);
-
-      expect(mockUserRepository.findById).toHaveBeenCalledWith(userId);
-      expect(mockUserRepository.update).toHaveBeenCalledWith(userId, {
-        name: updateData.name,
-        avatar: updateData.avatar,
       });
 
-      expect(result).toMatchObject({
-        success: true,
-        message: "Profile updated successfully",
-        data: {
-          user: {
-            name: updateData.name,
-            avatar: updateData.avatar,
-          },
-        },
+      const result = await userService.updateProfile(mockUser.id, {
+        name: "Updated Name",
       });
-    });
 
-    it("should update only provided fields", async () => {
-      const userId = "user-1";
-      const updateData = {
-        name: "Updated Name Only",
-      };
-
-      const updatedUser = {
-        ...mockUser,
-        name: updateData.name,
-      };
-
-      mockUserRepository.findById.mockResolvedValue(mockUser);
-      mockUserRepository.update.mockResolvedValue(updatedUser);
-
-      const result = await userService.updateProfile(userId, updateData);
-
-      expect(mockUserRepository.update).toHaveBeenCalledWith(userId, {
-        name: updateData.name,
+      expect(mockUserRepository.updateProfile).toHaveBeenCalledWith(mockUser.id, {
+        name: "Updated Name",
         avatar: mockUser.avatar,
       });
-
-      expect(result).toMatchObject({
-        success: true,
-        message: "Profile updated successfully",
-        data: {
-          user: {
-            name: updateData.name,
-          },
-        },
-      });
-    });
-
-    it("should fail when user not found", async () => {
-      const userId = "non-existent-user";
-      const updateData = { name: "New Name" };
-
-      mockUserRepository.findById.mockResolvedValue(null);
-
-      const result = await userService.updateProfile(userId, updateData);
-
-      expect(result).toMatchObject({
-        success: false,
-        message: "User not found",
-      });
-
-      expect(mockUserRepository.update).not.toHaveBeenCalled();
-    });
-
-    it("should throw error when update fails", async () => {
-      const userId = "user-1";
-      const updateData = { name: "New Name" };
-
-      mockUserRepository.findById.mockResolvedValue(mockUser);
-      mockUserRepository.update.mockRejectedValue(new Error("Database error"));
-
-      await expect(
-        userService.updateProfile(userId, updateData)
-      ).rejects.toThrow("Failed to update user profile");
+      expect(result.name).toBe("Updated Name");
+      expect(result).not.toHaveProperty("password");
     });
   });
 
   describe("handleGoogleOAuth", () => {
-    it("should handle existing Google user", async () => {
-      const googleUser = {
-        googleId: "google-123",
-        email: "google@example.com",
-        name: "Google User",
-        avatar: "google-avatar-url",
-      };
+    const profile = {
+      googleId: "google-123",
+      email: "google@example.com",
+      name: "Google User",
+      avatar: "https://example.com/a.png",
+      emailVerified: true,
+    };
 
-      const existingGoogleUser = {
+    it("links a verified local account", async () => {
+      const localUser = {
         ...mockUser,
-        googleId: googleUser.googleId,
-        email: googleUser.email,
-        provider: "google",
-      };
-
-      mockUserRepository.findByGoogleId.mockResolvedValue(existingGoogleUser);
-
-      const result = await userService.handleGoogleOAuth(googleUser);
-
-      expect(mockUserRepository.findByGoogleId).toHaveBeenCalledWith(
-        googleUser.googleId
-      );
-      expect(result).toEqual(existingGoogleUser);
-    });
-
-    it("should link Google account to existing email user", async () => {
-      const googleUser = {
-        googleId: "google-123",
-        email: "existing@example.com",
-        name: "Google User",
-        avatar: "google-avatar-url",
-      };
-
-      const existingEmailUser = {
-        ...mockUser,
-        email: googleUser.email,
+        email: profile.email,
+        isVerified: true,
         googleId: null,
-        provider: "local",
       };
-
-      const updatedUser = {
-        ...existingEmailUser,
-        name: googleUser.name,
-        avatar: googleUser.avatar,
-      };
-
+      const linked = { ...localUser, googleId: profile.googleId };
       mockUserRepository.findByGoogleId.mockResolvedValue(null);
-      mockUserRepository.findByEmail.mockResolvedValue(existingEmailUser);
-      mockUserRepository.update.mockResolvedValue(updatedUser);
+      mockUserRepository.findByEmail.mockResolvedValue(localUser);
+      mockUserRepository.updateProfile.mockResolvedValue(linked);
 
-      const result = await userService.handleGoogleOAuth(googleUser);
-
-      expect(mockUserRepository.findByGoogleId).toHaveBeenCalledWith(
-        googleUser.googleId
-      );
-      expect(mockUserRepository.findByEmail).toHaveBeenCalledWith(
-        googleUser.email
-      );
-      expect(mockUserRepository.update).toHaveBeenCalledWith(
-        existingEmailUser.id,
-        {
-          name: googleUser.name,
-          avatar: googleUser.avatar,
-        }
-      );
-      expect(result).toEqual(updatedUser);
+      await expect(userService.handleGoogleOAuth(profile)).resolves.toEqual(linked);
+      expect(mockUserRepository.updateProfile).toHaveBeenCalledWith(localUser.id, {
+        googleId: profile.googleId,
+        name: profile.name,
+        avatar: profile.avatar,
+        lastLoginAt: expect.any(Date),
+      });
     });
 
-    it("should create new Google user", async () => {
-      const googleUser = {
-        googleId: "google-123",
-        email: "newgoogle@example.com",
-        name: "New Google User",
-        avatar: "google-avatar-url",
-      };
-
-      const newGoogleUser = {
+    it("throws GOOGLE_LINK_UNVERIFIED when the local account is unverified", async () => {
+      mockUserRepository.findByGoogleId.mockResolvedValue(null);
+      mockUserRepository.findByEmail.mockResolvedValue({
         ...mockUser,
-        email: googleUser.email,
-        name: googleUser.name,
-        googleId: googleUser.googleId,
-        provider: "google",
-        avatar: googleUser.avatar,
-      };
+        email: profile.email,
+        isVerified: false,
+      });
 
+      await expect(userService.handleGoogleOAuth(profile)).rejects.toMatchObject({
+        code: "GOOGLE_LINK_UNVERIFIED",
+      });
+      await expect(userService.handleGoogleOAuth(profile)).rejects.toBeInstanceOf(
+        ConflictError
+      );
+      expect(mockUserRepository.updateProfile).not.toHaveBeenCalled();
+      expect(mockUserRepository.create).not.toHaveBeenCalled();
+    });
+
+    it("creates a new google user", async () => {
+      const created = {
+        ...mockUser,
+        email: profile.email,
+        name: profile.name,
+        googleId: profile.googleId,
+        provider: "google" as const,
+        avatar: profile.avatar,
+        isVerified: true,
+      };
       mockUserRepository.findByGoogleId.mockResolvedValue(null);
       mockUserRepository.findByEmail.mockResolvedValue(null);
-      mockUserRepository.create.mockResolvedValue(newGoogleUser);
+      mockUserRepository.create.mockResolvedValue(created);
 
-      const result = await userService.handleGoogleOAuth(googleUser);
-
+      await expect(userService.handleGoogleOAuth(profile)).resolves.toEqual(created);
       expect(mockUserRepository.create).toHaveBeenCalledWith({
-        email: googleUser.email,
-        name: googleUser.name,
-        googleId: googleUser.googleId,
+        email: profile.email,
+        name: profile.name,
+        googleId: profile.googleId,
         provider: "google",
-        avatar: googleUser.avatar,
-      });
-      expect(result).toEqual(newGoogleUser);
-    });
-
-    it("should throw error when Google OAuth handling fails", async () => {
-      const googleUser = {
-        googleId: "google-123",
-        email: "error@example.com",
-        name: "Error User",
-        avatar: "error-avatar",
-      };
-
-      mockUserRepository.findByGoogleId.mockRejectedValue(
-        new Error("Database error")
-      );
-
-      await expect(userService.handleGoogleOAuth(googleUser)).rejects.toThrow(
-        "Google OAuth handling failed"
-      );
-    });
-  });
-
-  describe("logout", () => {
-    it("should return success message for logout", async () => {
-      const result = await userService.logout();
-
-      expect(result).toMatchObject({
-        success: true,
-        message: "Logout successful",
+        avatar: profile.avatar,
+        isVerified: true,
       });
     });
   });

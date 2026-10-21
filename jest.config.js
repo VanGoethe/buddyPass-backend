@@ -6,6 +6,7 @@ module.exports = {
   transform: {
     "^.+\\.ts$": "ts-jest",
   },
+  setupFiles: ["<rootDir>/tests/setEnv.ts"],
   setupFilesAfterEnv: ["<rootDir>/tests/setup.ts"],
   collectCoverageFrom: ["src/**/*.ts", "!src/**/*.d.ts"],
   // Run tests sequentially to prevent data pollution and foreign key constraint violations

@@ -4,9 +4,21 @@
 
 import { Router } from "express";
 import { container } from "../container";
-import { SubscriptionController } from "../controllers/subscriptions";
-import { authenticateJWT, optionalAuth } from "../middleware/auth";
-import { body } from "express-validator";
+import {
+  authenticateJWT,
+  requireAdmin,
+  requireVerified,
+} from "../middleware/auth";
+import { validate } from "../middleware/validate";
+import { credentialRevealRateLimiter } from "../middleware/rateLimit";
+import {
+  createSubscriptionSchema,
+  idParamSchema,
+  listSubscriptionsSchema,
+  slotIdSchema,
+  slotRequestSchema,
+  updateSubscriptionSchema,
+} from "../types/schemas";
 
 const router = Router();
 const subscriptionController = container.getSubscriptionController();
@@ -110,18 +122,9 @@ const subscriptionController = container.getSubscriptionController();
 router.post(
   "/request",
   authenticateJWT,
-  [
-    body("serviceProviderId")
-      .notEmpty()
-      .withMessage("Service provider ID is required")
-      .isString()
-      .withMessage("Service provider ID must be a string"),
-    body("countryId")
-      .optional()
-      .isString()
-      .withMessage("Country ID must be a string"),
-  ],
-  subscriptionController.requestSubscriptionSlot.bind(subscriptionController)
+  requireVerified,
+  validate(slotRequestSchema),
+  subscriptionController.requestSubscriptionSlot
 );
 
 /**
@@ -174,10 +177,23 @@ router.post(
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
+router.get("/my-slots", authenticateJWT, subscriptionController.getUserSubscriptionSlots);
+
+router.get("/requests", authenticateJWT, subscriptionController.listMyRequests);
+
 router.get(
-  "/my-slots",
+  "/slots/:slotId/credentials",
   authenticateJWT,
-  subscriptionController.getUserSubscriptionSlots.bind(subscriptionController)
+  credentialRevealRateLimiter,
+  validate(slotIdSchema),
+  subscriptionController.revealCredentials
+);
+
+router.delete(
+  "/slots/:slotId",
+  authenticateJWT,
+  validate(slotIdSchema),
+  subscriptionController.releaseSlot
 );
 
 /**
@@ -312,10 +328,18 @@ router.get(
  *         $ref: '#/components/responses/InternalServerError'
  */
 router.get(
+  "/service-provider/:serviceProviderId",
+  authenticateJWT,
+  requireAdmin,
+  subscriptionController.getSubscriptionsByServiceProvider
+);
+
+router.get(
   "/",
   authenticateJWT,
-  SubscriptionController.getListValidation,
-  subscriptionController.getSubscriptions.bind(subscriptionController)
+  requireAdmin,
+  validate(listSubscriptionsSchema),
+  subscriptionController.getSubscriptions
 );
 
 /**
@@ -388,8 +412,9 @@ router.get(
 router.get(
   "/:id",
   authenticateJWT,
-  SubscriptionController.getByIdValidation,
-  subscriptionController.getSubscriptionById.bind(subscriptionController)
+  requireAdmin,
+  validate(idParamSchema),
+  subscriptionController.getSubscriptionById
 );
 
 /**
@@ -464,8 +489,9 @@ router.get(
 router.post(
   "/",
   authenticateJWT,
-  SubscriptionController.createValidation,
-  subscriptionController.createSubscription.bind(subscriptionController)
+  requireAdmin,
+  validate(createSubscriptionSchema),
+  subscriptionController.createSubscription
 );
 
 /**
@@ -547,8 +573,9 @@ router.post(
 router.put(
   "/:id",
   authenticateJWT,
-  SubscriptionController.updateValidation,
-  subscriptionController.updateSubscription.bind(subscriptionController)
+  requireAdmin,
+  validate(updateSubscriptionSchema),
+  subscriptionController.updateSubscription
 );
 
 /**
@@ -591,8 +618,9 @@ router.put(
 router.delete(
   "/:id",
   authenticateJWT,
-  SubscriptionController.deleteValidation,
-  subscriptionController.deleteSubscription.bind(subscriptionController)
+  requireAdmin,
+  validate(idParamSchema),
+  subscriptionController.deleteSubscription
 );
 
 /**
@@ -720,13 +748,5 @@ router.delete(
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.get(
-  "/service-provider/:serviceProviderId",
-  optionalAuth,
-  SubscriptionController.getByServiceProviderValidation,
-  subscriptionController.getSubscriptionsByServiceProvider.bind(
-    subscriptionController
-  )
-);
 
 export default router;

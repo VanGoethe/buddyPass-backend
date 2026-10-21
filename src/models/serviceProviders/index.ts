@@ -6,9 +6,23 @@ import { Prisma } from "@prisma/client";
 import {
   IServiceProvider,
   CreateServiceProviderData,
+  UpdateServiceProviderData,
   ServiceProviderResponse,
 } from "../../types/serviceProviders";
 import { ICountry } from "../../types/countries";
+import { ValidationError } from "../../utils/errors";
+
+export type ServiceProviderRecord = Prisma.ServiceProviderGetPayload<
+  Record<string, never>
+>;
+
+export type ServiceProviderWithCountries = Prisma.ServiceProviderGetPayload<{
+  include: {
+    supportedCountries: {
+      include: { country: true };
+    };
+  };
+}>;
 
 export class ServiceProvider implements IServiceProvider {
   public readonly id: string;
@@ -34,35 +48,39 @@ export class ServiceProvider implements IServiceProvider {
    */
   public static validateCreateData(data: CreateServiceProviderData): void {
     if (!data.name || data.name.trim().length === 0) {
-      throw new Error("Service provider name is required");
+      throw new ValidationError("Service provider name is required");
     }
 
     if (data.name.trim().length > 100) {
-      throw new Error("Service provider name must be 100 characters or less");
+      throw new ValidationError(
+        "Service provider name must be 100 characters or less",
+      );
     }
 
     if (data.description && data.description.length > 500) {
-      throw new Error(
-        "Service provider description must be 500 characters or less"
+      throw new ValidationError(
+        "Service provider description must be 500 characters or less",
       );
     }
 
     if (data.supportedCountryIds && data.supportedCountryIds.length > 50) {
-      throw new Error("Cannot support more than 50 countries");
+      throw new ValidationError("Cannot support more than 50 countries");
     }
   }
 
   /**
    * Validates service provider update data
    */
-  public static validateUpdateData(data: any): void {
+  public static validateUpdateData(data: UpdateServiceProviderData): void {
     if (data.name !== undefined) {
       if (!data.name || data.name.trim().length === 0) {
-        throw new Error("Service provider name is required");
+        throw new ValidationError("Service provider name is required");
       }
 
       if (data.name.trim().length > 100) {
-        throw new Error("Service provider name must be 100 characters or less");
+        throw new ValidationError(
+          "Service provider name must be 100 characters or less",
+        );
       }
     }
 
@@ -71,13 +89,13 @@ export class ServiceProvider implements IServiceProvider {
       data.description &&
       data.description.length > 500
     ) {
-      throw new Error(
-        "Service provider description must be 500 characters or less"
+      throw new ValidationError(
+        "Service provider description must be 500 characters or less",
       );
     }
 
     if (data.supportedCountryIds && data.supportedCountryIds.length > 50) {
-      throw new Error("Cannot support more than 50 countries");
+      throw new ValidationError("Cannot support more than 50 countries");
     }
   }
 
@@ -105,7 +123,29 @@ export class ServiceProvider implements IServiceProvider {
   /**
    * Creates a ServiceProvider instance from Prisma result
    */
-  public static fromPrisma(data: any): ServiceProvider {
+  public static fromPrisma(
+    data: ServiceProviderRecord | ServiceProviderWithCountries,
+  ): ServiceProvider {
+    const supportedCountries =
+      "supportedCountries" in data
+        ? data.supportedCountries.map((relation) => ({
+            country: {
+              id: relation.country.id,
+              name: relation.country.name,
+              code: relation.country.code,
+              alpha3: relation.country.alpha3,
+              numericCode: relation.country.numericCode,
+              continent: relation.country.continent,
+              region: relation.country.region,
+              currencyId: relation.country.currencyId,
+              phoneCode: relation.country.phoneCode,
+              isActive: relation.country.isActive,
+              createdAt: relation.country.createdAt,
+              updatedAt: relation.country.updatedAt,
+            },
+          }))
+        : undefined;
+
     return new ServiceProvider({
       id: data.id,
       name: data.name,
@@ -113,7 +153,7 @@ export class ServiceProvider implements IServiceProvider {
       metadata: data.metadata,
       createdAt: data.createdAt,
       updatedAt: data.updatedAt,
-      supportedCountries: data.supportedCountries || [],
+      supportedCountries,
     });
   }
 }

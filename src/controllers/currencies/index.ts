@@ -2,8 +2,53 @@
  * Currency Controller
  */
 
-import { Request, Response } from "express";
-import { ICurrencyService, CurrencyQueryOptions } from "../../types/currencies";
+import { NextFunction, Request, Response } from "express";
+import {
+  ICurrencyService,
+  CurrencyQueryOptions,
+  CreateCurrencyData,
+  UpdateCurrencyData,
+} from "../../types/currencies";
+import { sendSuccess } from "../../utils/http";
+
+const CURRENCY_SORT_FIELDS = [
+  "name",
+  "code",
+  "createdAt",
+  "updatedAt",
+] as const;
+
+type CurrencySortField = (typeof CURRENCY_SORT_FIELDS)[number];
+
+function queryString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function queryInt(value: unknown): number | undefined {
+  if (typeof value !== "string" || value.trim() === "") {
+    return undefined;
+  }
+  const parsed = Number.parseInt(value, 10);
+  return Number.isNaN(parsed) ? undefined : parsed;
+}
+
+function querySortField(value: unknown): CurrencySortField | undefined {
+  return CURRENCY_SORT_FIELDS.find((field) => field === value);
+}
+
+function querySortOrder(value: unknown): "asc" | "desc" | undefined {
+  return value === "asc" || value === "desc" ? value : undefined;
+}
+
+function queryBoolean(value: unknown): boolean | undefined {
+  if (value === "true") {
+    return true;
+  }
+  if (value === "false") {
+    return false;
+  }
+  return undefined;
+}
 
 export class CurrencyController {
   constructor(private currencyService: ICurrencyService) {}
@@ -11,279 +56,136 @@ export class CurrencyController {
   /**
    * Create a new currency
    */
-  async createCurrency(req: Request, res: Response): Promise<void> {
+  async createCurrency(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
     try {
-      const currencyData = req.body;
-      const currency = await this.currencyService.createCurrency(currencyData);
-
-      res.status(201).json({
-        success: true,
-        data: currency,
-        message: "Currency created successfully",
-      });
-    } catch (error) {
-      console.error("Create currency error:", error);
-      res.status(400).json({
-        success: false,
-        error: {
-          code: "CURRENCY_CREATION_FAILED",
-          message:
-            error instanceof Error
-              ? error.message
-              : "Failed to create currency",
-        },
-      });
+      const currency = await this.currencyService.createCurrency(
+        req.body as CreateCurrencyData,
+      );
+      sendSuccess(res, currency, "Currency created successfully", 201);
+    } catch (error: unknown) {
+      next(error);
     }
   }
 
   /**
    * Get currency by ID
    */
-  async getCurrencyById(req: Request, res: Response): Promise<void> {
+  async getCurrencyById(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
     try {
-      const { id } = req.params;
-      const currency = await this.currencyService.getCurrencyById(id);
-
-      res.status(200).json({
-        success: true,
-        data: currency,
-      });
-    } catch (error) {
-      console.error("Get currency by ID error:", error);
-
-      if (error instanceof Error && error.message === "Currency not found") {
-        res.status(404).json({
-          success: false,
-          error: {
-            code: "CURRENCY_NOT_FOUND",
-            message: "Currency not found",
-          },
-        });
-        return;
-      }
-
-      res.status(500).json({
-        success: false,
-        error: {
-          code: "CURRENCY_RETRIEVAL_FAILED",
-          message:
-            error instanceof Error
-              ? error.message
-              : "Failed to retrieve currency",
-        },
-      });
+      const currency = await this.currencyService.getCurrencyById(
+        req.params.id,
+      );
+      sendSuccess(res, currency);
+    } catch (error: unknown) {
+      next(error);
     }
   }
 
   /**
    * Get currency by code
    */
-  async getCurrencyByCode(req: Request, res: Response): Promise<void> {
+  async getCurrencyByCode(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
     try {
-      const { code } = req.params;
-      const currency = await this.currencyService.getCurrencyByCode(code);
-
-      res.status(200).json({
-        success: true,
-        data: currency,
-      });
-    } catch (error) {
-      console.error("Get currency by code error:", error);
-
-      if (error instanceof Error && error.message === "Currency not found") {
-        res.status(404).json({
-          success: false,
-          error: {
-            code: "CURRENCY_NOT_FOUND",
-            message: "Currency not found",
-          },
-        });
-        return;
-      }
-
-      res.status(500).json({
-        success: false,
-        error: {
-          code: "CURRENCY_RETRIEVAL_FAILED",
-          message:
-            error instanceof Error
-              ? error.message
-              : "Failed to retrieve currency",
-        },
-      });
+      const currency = await this.currencyService.getCurrencyByCode(
+        req.params.code,
+      );
+      sendSuccess(res, currency);
+    } catch (error: unknown) {
+      next(error);
     }
   }
 
   /**
    * Get all currencies with pagination and filtering
    */
-  async getCurrencies(req: Request, res: Response): Promise<void> {
+  async getCurrencies(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
     try {
       const options: CurrencyQueryOptions = {
-        page: req.query.page ? parseInt(req.query.page as string) : undefined,
-        limit: req.query.limit
-          ? parseInt(req.query.limit as string)
-          : undefined,
-        sortBy: req.query.sortBy as "name" | "code" | "createdAt" | "updatedAt",
-        sortOrder: req.query.sortOrder as "asc" | "desc",
-        search: req.query.search as string,
-        isActive:
-          req.query.isActive === "true"
-            ? true
-            : req.query.isActive === "false"
-            ? false
-            : undefined,
+        page: queryInt(req.query.page),
+        limit: queryInt(req.query.limit),
+        sortBy: querySortField(req.query.sortBy),
+        sortOrder: querySortOrder(req.query.sortOrder),
+        search: queryString(req.query.search),
+        isActive: queryBoolean(req.query.isActive),
       };
 
       const result = await this.currencyService.getCurrencies(options);
-
-      res.status(200).json({
-        success: true,
-        data: result,
-      });
-    } catch (error) {
-      console.error("Get currencies error:", error);
-      res.status(500).json({
-        success: false,
-        error: {
-          code: "CURRENCIES_RETRIEVAL_FAILED",
-          message:
-            error instanceof Error
-              ? error.message
-              : "Failed to retrieve currencies",
-        },
-      });
+      sendSuccess(res, result);
+    } catch (error: unknown) {
+      next(error);
     }
   }
 
   /**
    * Get active currencies
    */
-  async getActiveCurrencies(req: Request, res: Response): Promise<void> {
+  async getActiveCurrencies(
+    _req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
     try {
       const currencies = await this.currencyService.getActiveCurrencies();
-
-      res.status(200).json({
-        success: true,
-        data: currencies,
-      });
-    } catch (error) {
-      console.error("Get active currencies error:", error);
-      res.status(500).json({
-        success: false,
-        error: {
-          code: "ACTIVE_CURRENCIES_RETRIEVAL_FAILED",
-          message:
-            error instanceof Error
-              ? error.message
-              : "Failed to retrieve active currencies",
-        },
-      });
+      sendSuccess(res, currencies);
+    } catch (error: unknown) {
+      next(error);
     }
   }
 
   /**
    * Update currency
    */
-  async updateCurrency(req: Request, res: Response): Promise<void> {
+  async updateCurrency(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
     try {
-      const { id } = req.params;
-      const updateData = req.body;
-
       const updatedCurrency = await this.currencyService.updateCurrency(
-        id,
-        updateData
+        req.params.id,
+        req.body as UpdateCurrencyData,
       );
-
-      res.status(200).json({
-        success: true,
-        data: updatedCurrency,
-        message: "Currency updated successfully",
-      });
-    } catch (error) {
-      console.error("Update currency error:", error);
-
-      if (error instanceof Error && error.message === "Currency not found") {
-        res.status(404).json({
-          success: false,
-          error: {
-            code: "CURRENCY_NOT_FOUND",
-            message: "Currency not found",
-          },
-        });
-        return;
-      }
-
-      res.status(400).json({
-        success: false,
-        error: {
-          code: "CURRENCY_UPDATE_FAILED",
-          message:
-            error instanceof Error
-              ? error.message
-              : "Failed to update currency",
-        },
-      });
+      sendSuccess(res, updatedCurrency, "Currency updated successfully");
+    } catch (error: unknown) {
+      next(error);
     }
   }
 
   /**
    * Delete currency
    */
-  async deleteCurrency(req: Request, res: Response): Promise<void> {
+  async deleteCurrency(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
     try {
-      const { id } = req.params;
-      await this.currencyService.deleteCurrency(id);
-
-      res.status(200).json({
-        success: true,
-        message: "Currency deleted successfully",
-      });
-    } catch (error) {
-      console.error("Delete currency error:", error);
-
-      if (error instanceof Error && error.message === "Currency not found") {
-        res.status(404).json({
-          success: false,
-          error: {
-            code: "CURRENCY_NOT_FOUND",
-            message: "Currency not found",
-          },
-        });
-        return;
-      }
-
-      if (
-        error instanceof Error &&
-        error.message.includes("Cannot delete currency that is being used")
-      ) {
-        res.status(409).json({
-          success: false,
-          error: {
-            code: "CURRENCY_IN_USE",
-            message: error.message,
-          },
-        });
-        return;
-      }
-
-      res.status(500).json({
-        success: false,
-        error: {
-          code: "CURRENCY_DELETION_FAILED",
-          message:
-            error instanceof Error
-              ? error.message
-              : "Failed to delete currency",
-        },
-      });
+      await this.currencyService.deleteCurrency(req.params.id);
+      sendSuccess(res, undefined, "Currency deleted successfully");
+    } catch (error: unknown) {
+      next(error);
     }
   }
 }
 
-// Export a factory function to create controller instance
 export const createCurrencyController = (
-  currencyService: ICurrencyService
+  currencyService: ICurrencyService,
 ): CurrencyController => {
   return new CurrencyController(currencyService);
 };

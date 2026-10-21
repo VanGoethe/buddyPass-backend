@@ -85,6 +85,7 @@ export interface IServiceProviderRepository {
     data: UpdateServiceProviderData
   ): Promise<IServiceProvider>;
   delete(id: string): Promise<void>;
+  count(): Promise<number>;
   existsByName(name: string, excludeId?: string): Promise<boolean>;
   addSupportedCountries(
     serviceProviderId: string,

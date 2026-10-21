@@ -9,7 +9,7 @@ export abstract class BaseController {
    */
   protected sendSuccess(
     res: Response,
-    data: any,
+    data: unknown,
     message?: string,
     statusCode: number = 200
   ): void {
@@ -28,7 +28,7 @@ export abstract class BaseController {
     res: Response,
     message: string,
     statusCode: number = 400,
-    error?: any
+    error?: unknown
   ): void {
     res.status(statusCode).json({
       success: false,
@@ -41,7 +41,9 @@ export abstract class BaseController {
   /**
    * Async handler wrapper for error handling
    */
-  protected asyncHandler = (fn: Function) => {
+  protected asyncHandler = (
+    fn: (req: Request, res: Response, next: NextFunction) => Promise<void>
+  ) => {
     return (req: Request, res: Response, next: NextFunction) => {
       Promise.resolve(fn(req, res, next)).catch(next);
     };

@@ -1,16 +1,7 @@
-/**
- * Jest test setup configuration
- */
-
-// Setup test environment
-beforeAll(async () => {
-  // Initialize test database connection
-  // Setup test data if needed
-});
+import { disconnectDatabase } from "../src/config/database";
 
 afterAll(async () => {
-  // Cleanup test database
-  // Close connections
+  await disconnectDatabase();
 });
 
 beforeEach(() => {

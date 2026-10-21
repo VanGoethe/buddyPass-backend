@@ -1,57 +1,40 @@
-import dotenv from "dotenv";
 import App from "./app";
-import { connectDatabase } from "./config/database";
+import { env } from "./config/env";
+import { connectDatabase, disconnectDatabase } from "./config/database";
+import { logger } from "./utils/logger";
+import { startSlotMaintenance } from "./jobs/slotMaintenance";
 
-// Load environment variables
-dotenv.config();
-
-/**
- * Server startup and configuration
- */
-class Server {
-  private app: App;
-  private port: number;
-
-  constructor() {
-    this.app = new App();
-    this.port = parseInt(process.env.PORT || "3000", 10);
+async function start(): Promise<void> {
+  await connectDatabase();
+  if (env.NODE_ENV !== "test") {
+    startSlotMaintenance();
   }
 
-  public async start(): Promise<void> {
-    try {
-      // Initialize database connection
-      await connectDatabase();
+  const app = new App();
+  const server = app.app.listen(env.PORT, () => {
+    logger.info(
+      { port: env.PORT, env: env.NODE_ENV },
+      "Server started"
+    );
+  });
 
-      // Start server
-      this.app.app.listen(this.port, () => {
-        console.log(`🚀 Server running on port ${this.port}`);
-        console.log(`📊 Environment: ${process.env.NODE_ENV || "development"}`);
-        console.log(`🔗 Health check: http://localhost:${this.port}/health`);
-      });
-    } catch (error) {
-      console.error("❌ Failed to start server:", error);
-      process.exit(1);
-    }
-  }
+  const shutdown = async (signal: string): Promise<void> => {
+    logger.info({ signal }, "Server shutting down");
+    server.close(async () => {
+      await disconnectDatabase();
+      process.exit(0);
+    });
+  };
 
-  public async stop(): Promise<void> {
-    // Graceful shutdown logic here
-    console.log("🛑 Server shutting down...");
-    process.exit(0);
-  }
+  process.on("SIGTERM", () => {
+    void shutdown("SIGTERM");
+  });
+  process.on("SIGINT", () => {
+    void shutdown("SIGINT");
+  });
 }
 
-// Handle graceful shutdown
-process.on("SIGTERM", async () => {
-  const server = new Server();
-  await server.stop();
+start().catch((error: unknown) => {
+  logger.error({ err: error }, "Failed to start server");
+  process.exit(1);
 });
-
-process.on("SIGINT", async () => {
-  const server = new Server();
-  await server.stop();
-});
-
-// Start server
-const server = new Server();
-server.start();

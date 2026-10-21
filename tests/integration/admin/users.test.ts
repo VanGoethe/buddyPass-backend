@@ -69,6 +69,7 @@ describe("Admin Users Endpoints", () => {
   afterAll(async () => {
     await cleanup.cleanupAll();
     await cleanup.disconnect();
+    await prisma.$disconnect();
   });
 
   beforeEach(async () => {
@@ -268,9 +269,7 @@ describe("Admin Users Endpoints", () => {
       const response = await request(app)
         .get("/api/admin/users?limit=150")
         .set("Authorization", `Bearer ${adminToken}`)
-        .expect(200);
-
-      expect(response.body.data.pagination.limit).toBe(100);
+        .expect(400);
     });
 
     it("should deny access to non-admin users", async () => {
@@ -290,11 +289,7 @@ describe("Admin Users Endpoints", () => {
           "/api/admin/users?page=invalid&limit=invalid&role=INVALID&status=all"
         )
         .set("Authorization", `Bearer ${adminToken}`)
-        .expect(200);
-
-      expect(response.body.data.pagination.page).toBe(1); // Default page
-      expect(response.body.data.pagination.limit).toBe(10); // Default limit
-      expect(response.body.data.users.length).toBeGreaterThanOrEqual(5); // All users (invalid filters ignored)
+        .expect(400);
     });
 
     it("should return empty array when no users match filters", async () => {
@@ -485,8 +480,8 @@ describe("Admin Users Endpoints", () => {
         .expect(400);
 
       expect(response.body.success).toBe(false);
-      expect(response.body.error.code).toBe("NO_UPDATE_DATA");
-      expect(response.body.error.message).toBe("No valid update data provided");
+      expect(response.body.error.code).toBe("VALIDATION_ERROR");
+      expect(response.body.error.message).toBe("Request validation failed");
     });
 
     it("should return 400 for invalid name length", async () => {

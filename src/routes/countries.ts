@@ -5,7 +5,7 @@
 import { Router } from "express";
 import container from "../container";
 import { CountryController } from "../controllers/countries";
-import { authenticateJWT } from "../middleware/auth";
+import { authenticateJWT, requireAdmin } from "../middleware/auth";
 
 const router = Router();
 
@@ -161,10 +161,10 @@ const countryController =
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.post("/", authenticateJWT, (req, res) =>
-  countryController.createCountry(req, res)
+router.post("/", authenticateJWT, requireAdmin, (req, res, next) =>
+  countryController.createCountry(req, res, next)
 );
-router.get("/", (req, res) => countryController.getCountries(req, res));
+router.get("/", (req, res, next) => countryController.getCountries(req, res, next));
 
 /**
  * @swagger
@@ -205,8 +205,8 @@ router.get("/", (req, res) => countryController.getCountries(req, res));
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.get("/active", (req, res) =>
-  countryController.getActiveCountries(req, res)
+router.get("/active", (req, res, next) =>
+  countryController.getActiveCountries(req, res, next)
 );
 
 /**
@@ -354,12 +354,12 @@ router.get("/active", (req, res) =>
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.get("/:id", (req, res) => countryController.getCountryById(req, res));
-router.put("/:id", authenticateJWT, (req, res) =>
-  countryController.updateCountry(req, res)
+router.get("/:id", (req, res, next) => countryController.getCountryById(req, res, next));
+router.put("/:id", authenticateJWT, requireAdmin, (req, res, next) =>
+  countryController.updateCountry(req, res, next)
 );
-router.delete("/:id", authenticateJWT, (req, res) =>
-  countryController.deleteCountry(req, res)
+router.delete("/:id", authenticateJWT, requireAdmin, (req, res, next) =>
+  countryController.deleteCountry(req, res, next)
 );
 
 /**
@@ -404,8 +404,8 @@ router.delete("/:id", authenticateJWT, (req, res) =>
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.get("/code/:code", (req, res) =>
-  countryController.getCountryByCode(req, res)
+router.get("/code/:code", (req, res, next) =>
+  countryController.getCountryByCode(req, res, next)
 );
 
 export default router;

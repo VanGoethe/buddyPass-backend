@@ -2,7 +2,7 @@
  * ServiceProvider Repository Implementation
  */
 
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import {
   IServiceProviderRepository,
   IServiceProvider,
@@ -13,306 +13,263 @@ import {
 import { ICountry } from "../../types/countries";
 import { ServiceProvider } from "../../models/serviceProviders";
 
-export class PrismaServiceProviderRepository
-  implements IServiceProviderRepository
-{
+function toJsonInput(
+  value: Prisma.JsonValue | null | undefined,
+): Prisma.InputJsonValue | typeof Prisma.DbNull | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null) {
+    return Prisma.DbNull;
+  }
+  return value as Prisma.InputJsonValue;
+}
+
+const providerWithCountries = {
+  supportedCountries: {
+    include: {
+      country: true,
+    },
+  },
+} satisfies Prisma.ServiceProviderInclude;
+
+export class PrismaServiceProviderRepository implements IServiceProviderRepository {
   constructor(private prisma: PrismaClient) {}
 
   async create(data: CreateServiceProviderData): Promise<IServiceProvider> {
-    try {
-      const result = await this.prisma.$transaction(async (tx) => {
-        // Create the service provider
-        const serviceProvider = await tx.serviceProvider.create({
-          data: {
-            name: data.name.trim(),
-            description: data.description?.trim() || null,
-            metadata: (data.metadata as any) || null,
-          },
-        });
-
-        // Add supported countries if provided
-        if (data.supportedCountryIds && data.supportedCountryIds.length > 0) {
-          await tx.serviceProviderCountry.createMany({
-            data: data.supportedCountryIds.map((countryId) => ({
-              serviceProviderId: serviceProvider.id,
-              countryId,
-            })),
-          });
-        }
-
-        return serviceProvider;
+    const result = await this.prisma.$transaction(async (tx) => {
+      const serviceProvider = await tx.serviceProvider.create({
+        data: {
+          name: data.name.trim(),
+          description: data.description?.trim() || null,
+          metadata: toJsonInput(data.metadata) ?? Prisma.DbNull,
+        },
       });
 
-      return ServiceProvider.fromPrisma(result);
-    } catch (error: any) {
-      if (error.code === "P2002") {
-        throw new Error("A service provider with this name already exists");
+      if (data.supportedCountryIds && data.supportedCountryIds.length > 0) {
+        await tx.serviceProviderCountry.createMany({
+          data: data.supportedCountryIds.map((countryId) => ({
+            serviceProviderId: serviceProvider.id,
+            countryId,
+          })),
+        });
       }
-      if (error.code === "P2003") {
-        throw new Error("One or more country IDs are invalid");
-      }
-      throw new Error(`Failed to create service provider: ${error.message}`);
-    }
+
+      return serviceProvider;
+    });
+
+    return ServiceProvider.fromPrisma(result);
   }
 
   async findById(
     id: string,
-    includeCountries = false
+    includeCountries = false,
   ): Promise<IServiceProvider | null> {
-    try {
-      const include: any = {};
-      if (includeCountries) {
-        include.supportedCountries = {
-          include: {
-            country: true,
-          },
-        };
-      }
-
+    if (includeCountries) {
       const serviceProvider = await this.prisma.serviceProvider.findUnique({
         where: { id },
-        include,
+        include: providerWithCountries,
       });
 
       return serviceProvider
         ? ServiceProvider.fromPrisma(serviceProvider)
         : null;
-    } catch (error: any) {
-      throw new Error(`Failed to find service provider: ${error.message}`);
     }
+
+    const serviceProvider = await this.prisma.serviceProvider.findUnique({
+      where: { id },
+    });
+
+    return serviceProvider ? ServiceProvider.fromPrisma(serviceProvider) : null;
   }
 
   async findMany(options: ServiceProviderQueryOptions = {}): Promise<{
     serviceProviders: IServiceProvider[];
     total: number;
   }> {
-    try {
-      const {
-        page = 1,
-        limit = 10,
-        sortBy = "createdAt",
-        sortOrder = "desc",
-        search,
-        countryId,
-      } = options;
+    const {
+      page = 1,
+      limit = 10,
+      sortBy = "createdAt",
+      sortOrder = "desc",
+      search,
+      countryId,
+    } = options;
 
-      const skip = (page - 1) * limit;
-      const take = Math.min(limit, 100); // Cap at 100 items per page
+    const skip = (page - 1) * limit;
+    const take = Math.min(limit, 100);
+    const where: Prisma.ServiceProviderWhereInput = {};
 
-      // Build where clause for search
-      const where: any = {};
-      if (search) {
-        where.OR = [
-          {
-            name: {
-              contains: search,
-              mode: "insensitive",
-            },
+    if (search) {
+      where.OR = [
+        {
+          name: {
+            contains: search,
+            mode: "insensitive",
           },
-          {
-            description: {
-              contains: search,
-              mode: "insensitive",
-            },
+        },
+        {
+          description: {
+            contains: search,
+            mode: "insensitive",
           },
-        ];
-      }
-
-      // Filter by country if provided
-      if (countryId) {
-        where.supportedCountries = {
-          some: {
-            countryId,
-          },
-        };
-      }
-
-      // Build orderBy clause
-      const orderBy: any = {};
-      orderBy[sortBy] = sortOrder;
-
-      const [serviceProviders, total] = await Promise.all([
-        this.prisma.serviceProvider.findMany({
-          where,
-          skip,
-          take,
-          orderBy,
-          include: {
-            supportedCountries: {
-              include: {
-                country: true,
-              },
-            },
-          },
-        }),
-        this.prisma.serviceProvider.count({ where }),
-      ]);
-
-      return {
-        serviceProviders: serviceProviders.map((sp) =>
-          ServiceProvider.fromPrisma(sp)
-        ),
-        total,
-      };
-    } catch (error: any) {
-      throw new Error(`Failed to fetch service providers: ${error.message}`);
+        },
+      ];
     }
+
+    if (countryId) {
+      where.supportedCountries = {
+        some: {
+          countryId,
+        },
+      };
+    }
+
+    const orderBy: Prisma.ServiceProviderOrderByWithRelationInput = {
+      [sortBy]: sortOrder,
+    };
+
+    const [serviceProviders, total] = await Promise.all([
+      this.prisma.serviceProvider.findMany({
+        where,
+        skip,
+        take,
+        orderBy,
+        include: providerWithCountries,
+      }),
+      this.prisma.serviceProvider.count({ where }),
+    ]);
+
+    return {
+      serviceProviders: serviceProviders.map((provider) =>
+        ServiceProvider.fromPrisma(provider),
+      ),
+      total,
+    };
   }
 
   async update(
     id: string,
-    data: UpdateServiceProviderData
+    data: UpdateServiceProviderData,
   ): Promise<IServiceProvider> {
-    try {
-      const result = await this.prisma.$transaction(async (tx) => {
-        const updateData: any = {};
+    const result = await this.prisma.$transaction(async (tx) => {
+      const updateData: Prisma.ServiceProviderUpdateInput = {};
 
-        if (data.name !== undefined) {
-          updateData.name = data.name.trim();
-        }
+      if (data.name !== undefined) {
+        updateData.name = data.name.trim();
+      }
 
-        if (data.description !== undefined) {
-          updateData.description = data.description?.trim() || null;
-        }
+      if (data.description !== undefined) {
+        updateData.description = data.description?.trim() || null;
+      }
 
-        if (data.metadata !== undefined) {
-          updateData.metadata = (data.metadata as any) || null;
-        }
+      if (data.metadata !== undefined) {
+        updateData.metadata = toJsonInput(data.metadata);
+      }
 
-        const serviceProvider = await tx.serviceProvider.update({
-          where: { id },
-          data: updateData,
-        });
-
-        // Update supported countries if provided
-        if (data.supportedCountryIds !== undefined) {
-          // Remove existing country associations
-          await tx.serviceProviderCountry.deleteMany({
-            where: { serviceProviderId: id },
-          });
-
-          // Add new country associations if any
-          if (data.supportedCountryIds.length > 0) {
-            await tx.serviceProviderCountry.createMany({
-              data: data.supportedCountryIds.map((countryId) => ({
-                serviceProviderId: id,
-                countryId,
-              })),
-            });
-          }
-        }
-
-        return serviceProvider;
+      const serviceProvider = await tx.serviceProvider.update({
+        where: { id },
+        data: updateData,
       });
 
-      return ServiceProvider.fromPrisma(result);
-    } catch (error: any) {
-      if (error.code === "P2025") {
-        throw new Error("Service provider not found");
+      if (data.supportedCountryIds !== undefined) {
+        await tx.serviceProviderCountry.deleteMany({
+          where: { serviceProviderId: id },
+        });
+
+        if (data.supportedCountryIds.length > 0) {
+          await tx.serviceProviderCountry.createMany({
+            data: data.supportedCountryIds.map((countryId) => ({
+              serviceProviderId: id,
+              countryId,
+            })),
+          });
+        }
       }
-      if (error.code === "P2002") {
-        throw new Error("A service provider with this name already exists");
-      }
-      if (error.code === "P2003") {
-        throw new Error("One or more country IDs are invalid");
-      }
-      throw new Error(`Failed to update service provider: ${error.message}`);
-    }
+
+      return serviceProvider;
+    });
+
+    return ServiceProvider.fromPrisma(result);
   }
 
   async delete(id: string): Promise<void> {
-    try {
-      await this.prisma.serviceProvider.delete({
-        where: { id },
-      });
-    } catch (error: any) {
-      if (error.code === "P2025") {
-        throw new Error("Service provider not found");
-      }
-      if (error.code === "P2003") {
-        throw new Error(
-          "Cannot delete service provider: it has associated subscriptions"
-        );
-      }
-      throw new Error(`Failed to delete service provider: ${error.message}`);
-    }
+    await this.prisma.serviceProvider.delete({
+      where: { id },
+    });
+  }
+
+  async count(): Promise<number> {
+    return this.prisma.serviceProvider.count();
   }
 
   async existsByName(name: string, excludeId?: string): Promise<boolean> {
-    try {
-      const where: any = {
-        name: {
-          equals: name.trim(),
-          mode: "insensitive",
-        },
+    const where: Prisma.ServiceProviderWhereInput = {
+      name: {
+        equals: name.trim(),
+        mode: "insensitive",
+      },
+    };
+
+    if (excludeId) {
+      where.id = {
+        not: excludeId,
       };
-
-      if (excludeId) {
-        where.id = {
-          not: excludeId,
-        };
-      }
-
-      const count = await this.prisma.serviceProvider.count({ where });
-      return count > 0;
-    } catch (error: any) {
-      throw new Error(
-        `Failed to check service provider name: ${error.message}`
-      );
     }
+
+    const count = await this.prisma.serviceProvider.count({ where });
+    return count > 0;
   }
 
   async addSupportedCountries(
     serviceProviderId: string,
-    countryIds: string[]
+    countryIds: string[],
   ): Promise<void> {
-    try {
-      await this.prisma.serviceProviderCountry.createMany({
-        data: countryIds.map((countryId) => ({
-          serviceProviderId,
-          countryId,
-        })),
-        skipDuplicates: true,
-      });
-    } catch (error: any) {
-      if (error.code === "P2003") {
-        throw new Error("Service provider or one or more countries not found");
-      }
-      throw new Error(`Failed to add supported countries: ${error.message}`);
-    }
+    await this.prisma.serviceProviderCountry.createMany({
+      data: countryIds.map((countryId) => ({
+        serviceProviderId,
+        countryId,
+      })),
+      skipDuplicates: true,
+    });
   }
 
   async removeSupportedCountries(
     serviceProviderId: string,
-    countryIds: string[]
+    countryIds: string[],
   ): Promise<void> {
-    try {
-      await this.prisma.serviceProviderCountry.deleteMany({
-        where: {
-          serviceProviderId,
-          countryId: {
-            in: countryIds,
-          },
+    await this.prisma.serviceProviderCountry.deleteMany({
+      where: {
+        serviceProviderId,
+        countryId: {
+          in: countryIds,
         },
-      });
-    } catch (error: any) {
-      throw new Error(`Failed to remove supported countries: ${error.message}`);
-    }
+      },
+    });
   }
 
   async getSupportedCountries(serviceProviderId: string): Promise<ICountry[]> {
-    try {
-      const relationships = await this.prisma.serviceProviderCountry.findMany({
-        where: { serviceProviderId },
-        include: {
-          country: true,
-        },
-      });
+    const relationships = await this.prisma.serviceProviderCountry.findMany({
+      where: { serviceProviderId },
+      include: {
+        country: true,
+      },
+    });
 
-      return relationships.map((rel) => rel.country);
-    } catch (error: any) {
-      throw new Error(`Failed to get supported countries: ${error.message}`);
-    }
+    return relationships.map((relation) => ({
+      id: relation.country.id,
+      name: relation.country.name,
+      code: relation.country.code,
+      alpha3: relation.country.alpha3,
+      numericCode: relation.country.numericCode,
+      continent: relation.country.continent,
+      region: relation.country.region,
+      currencyId: relation.country.currencyId,
+      phoneCode: relation.country.phoneCode,
+      isActive: relation.country.isActive,
+      createdAt: relation.country.createdAt,
+      updatedAt: relation.country.updatedAt,
+    }));
   }
 }
 
@@ -320,7 +277,7 @@ export class PrismaServiceProviderRepository
  * Factory function to create ServiceProvider repository
  */
 export function createServiceProviderRepository(
-  prisma: PrismaClient
+  prisma: PrismaClient,
 ): IServiceProviderRepository {
   return new PrismaServiceProviderRepository(prisma);
 }

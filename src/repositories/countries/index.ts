@@ -2,7 +2,7 @@
  * Country Repository Implementation
  */
 
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import {
   ICountry,
   CreateCountryData,
@@ -11,347 +11,285 @@ import {
   ICountryRepository,
 } from "../../types/countries";
 import { Country } from "../../models/countries";
+import {
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+} from "../../utils/errors";
 
 export class PrismaCountryRepository implements ICountryRepository {
   constructor(private prisma: PrismaClient) {}
 
   async create(data: CreateCountryData): Promise<ICountry> {
-    try {
-      Country.validateCreateData(data);
-      const normalizedData = Country.normalizeData(data);
+    Country.validateCreateData(data);
+    const normalizedData = Country.normalizeData(data);
 
-      // Check for duplicates
-      const existingByCode = await this.existsByCode(normalizedData.code);
-      if (existingByCode) {
-        throw new Error(
-          `Country with code '${normalizedData.code}' already exists`
-        );
-      }
-
-      const existingByAlpha3 = await this.existsByAlpha3(normalizedData.alpha3);
-      if (existingByAlpha3) {
-        throw new Error(
-          `Country with alpha-3 code '${normalizedData.alpha3}' already exists`
-        );
-      }
-
-      const existingByName = await this.existsByName(normalizedData.name);
-      if (existingByName) {
-        throw new Error(
-          `Country with name '${normalizedData.name}' already exists`
-        );
-      }
-
-      const createdCountry = await this.prisma.country.create({
-        data: {
-          ...normalizedData,
-          isActive: normalizedData.isActive ?? true,
-        },
-      });
-
-      return Country.fromPrisma(createdCountry);
-    } catch (error) {
-      throw new Error(
-        `Failed to create country: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
+    if (
+      !normalizedData.name ||
+      !normalizedData.code ||
+      !normalizedData.alpha3
+    ) {
+      throw new ValidationError(
+        "Country name, code, and alpha-3 code are required",
       );
     }
+
+    const existingByCode = await this.existsByCode(normalizedData.code);
+    if (existingByCode) {
+      throw new ConflictError(
+        `Country with code '${normalizedData.code}' already exists`,
+      );
+    }
+
+    const existingByAlpha3 = await this.existsByAlpha3(normalizedData.alpha3);
+    if (existingByAlpha3) {
+      throw new ConflictError(
+        `Country with alpha-3 code '${normalizedData.alpha3}' already exists`,
+      );
+    }
+
+    const existingByName = await this.existsByName(normalizedData.name);
+    if (existingByName) {
+      throw new ConflictError(
+        `Country with name '${normalizedData.name}' already exists`,
+      );
+    }
+
+    const createdCountry = await this.prisma.country.create({
+      data: {
+        name: normalizedData.name,
+        code: normalizedData.code,
+        alpha3: normalizedData.alpha3,
+        numericCode: normalizedData.numericCode,
+        continent: normalizedData.continent,
+        region: normalizedData.region,
+        currencyId: normalizedData.currencyId,
+        phoneCode: normalizedData.phoneCode,
+        isActive: normalizedData.isActive ?? true,
+      },
+    });
+
+    return Country.fromPrisma(createdCountry);
   }
 
   async findById(id: string): Promise<ICountry | null> {
-    try {
-      const country = await this.prisma.country.findUnique({
-        where: { id },
-      });
+    const country = await this.prisma.country.findUnique({
+      where: { id },
+    });
 
-      return country ? Country.fromPrisma(country) : null;
-    } catch (error) {
-      throw new Error(
-        `Failed to find country by ID: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
-    }
+    return country ? Country.fromPrisma(country) : null;
   }
 
   async findByCode(code: string): Promise<ICountry | null> {
-    try {
-      const country = await this.prisma.country.findUnique({
-        where: { code: code.toUpperCase() },
-      });
+    const country = await this.prisma.country.findUnique({
+      where: { code: code.toUpperCase() },
+    });
 
-      return country ? Country.fromPrisma(country) : null;
-    } catch (error) {
-      throw new Error(
-        `Failed to find country by code: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
-    }
+    return country ? Country.fromPrisma(country) : null;
   }
 
   async findByAlpha3(alpha3: string): Promise<ICountry | null> {
-    try {
-      const country = await this.prisma.country.findUnique({
-        where: { alpha3: alpha3.toUpperCase() },
-      });
+    const country = await this.prisma.country.findUnique({
+      where: { alpha3: alpha3.toUpperCase() },
+    });
 
-      return country ? Country.fromPrisma(country) : null;
-    } catch (error) {
-      throw new Error(
-        `Failed to find country by alpha-3 code: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
-    }
+    return country ? Country.fromPrisma(country) : null;
   }
 
   async findMany(options: CountryQueryOptions = {}): Promise<{
     countries: ICountry[];
     total: number;
   }> {
-    try {
-      const {
-        page = 1,
-        limit = 10,
-        sortBy = "name",
-        sortOrder = "asc",
-        search,
-        continent,
-        region,
-        isActive,
-      } = options;
+    const {
+      page = 1,
+      limit = 10,
+      sortBy = "name",
+      sortOrder = "asc",
+      search,
+      continent,
+      region,
+      isActive,
+    } = options;
 
-      const offset = (page - 1) * limit;
+    const offset = (page - 1) * limit;
+    const where: Prisma.CountryWhereInput = {};
 
-      // Build where clause
-      const where: any = {};
-
-      if (search) {
-        where.OR = [
-          { name: { contains: search, mode: "insensitive" } },
-          { code: { contains: search, mode: "insensitive" } },
-          { alpha3: { contains: search, mode: "insensitive" } },
-        ];
-      }
-
-      if (continent) {
-        where.continent = { contains: continent, mode: "insensitive" };
-      }
-
-      if (region) {
-        where.region = { contains: region, mode: "insensitive" };
-      }
-
-      if (isActive !== undefined) {
-        where.isActive = isActive;
-      }
-
-      // Build order by clause
-      const orderBy: any = {};
-      orderBy[sortBy] = sortOrder;
-
-      const [countries, total] = await Promise.all([
-        this.prisma.country.findMany({
-          where,
-          orderBy,
-          skip: offset,
-          take: limit,
-        }),
-        this.prisma.country.count({ where }),
-      ]);
-
-      return {
-        countries: countries.map((country) => Country.fromPrisma(country)),
-        total,
-      };
-    } catch (error) {
-      throw new Error(
-        `Failed to fetch countries: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { code: { contains: search, mode: "insensitive" } },
+        { alpha3: { contains: search, mode: "insensitive" } },
+      ];
     }
+
+    if (continent) {
+      where.continent = { contains: continent, mode: "insensitive" };
+    }
+
+    if (region) {
+      where.region = { contains: region, mode: "insensitive" };
+    }
+
+    if (isActive !== undefined) {
+      where.isActive = isActive;
+    }
+
+    const orderBy: Prisma.CountryOrderByWithRelationInput = {
+      [sortBy]: sortOrder,
+    };
+
+    const [countries, total] = await Promise.all([
+      this.prisma.country.findMany({
+        where,
+        orderBy,
+        skip: offset,
+        take: limit,
+      }),
+      this.prisma.country.count({ where }),
+    ]);
+
+    return {
+      countries: countries.map((country) => Country.fromPrisma(country)),
+      total,
+    };
   }
 
   async findActive(): Promise<ICountry[]> {
-    try {
-      const countries = await this.prisma.country.findMany({
-        where: { isActive: true },
-        orderBy: { name: "asc" },
-      });
+    const countries = await this.prisma.country.findMany({
+      where: { isActive: true },
+      orderBy: { name: "asc" },
+    });
 
-      return countries.map((country) => Country.fromPrisma(country));
-    } catch (error) {
-      throw new Error(
-        `Failed to fetch active countries: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
-    }
+    return countries.map((country) => Country.fromPrisma(country));
   }
 
   async update(id: string, data: UpdateCountryData): Promise<ICountry> {
-    try {
-      Country.validateUpdateData(data);
-      const normalizedData = Country.normalizeData(data);
+    Country.validateUpdateData(data);
+    const normalizedData = Country.normalizeData(data);
 
-      // Check if country exists
-      const existingCountry = await this.findById(id);
-      if (!existingCountry) {
-        throw new Error("Country not found");
-      }
-
-      // Check for duplicates if fields are being updated
-      if (normalizedData.code && normalizedData.code !== existingCountry.code) {
-        const existingByCode = await this.existsByCode(normalizedData.code, id);
-        if (existingByCode) {
-          throw new Error(
-            `Country with code '${normalizedData.code}' already exists`
-          );
-        }
-      }
-
-      if (
-        normalizedData.alpha3 &&
-        normalizedData.alpha3 !== existingCountry.alpha3
-      ) {
-        const existingByAlpha3 = await this.existsByAlpha3(
-          normalizedData.alpha3,
-          id
-        );
-        if (existingByAlpha3) {
-          throw new Error(
-            `Country with alpha-3 code '${normalizedData.alpha3}' already exists`
-          );
-        }
-      }
-
-      if (normalizedData.name && normalizedData.name !== existingCountry.name) {
-        const existingByName = await this.existsByName(normalizedData.name, id);
-        if (existingByName) {
-          throw new Error(
-            `Country with name '${normalizedData.name}' already exists`
-          );
-        }
-      }
-
-      const updatedCountry = await this.prisma.country.update({
-        where: { id },
-        data: normalizedData,
-      });
-
-      return Country.fromPrisma(updatedCountry);
-    } catch (error) {
-      throw new Error(
-        `Failed to update country: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
+    const existingCountry = await this.findById(id);
+    if (!existingCountry) {
+      throw new NotFoundError("Country not found");
     }
+
+    if (normalizedData.code && normalizedData.code !== existingCountry.code) {
+      const existingByCode = await this.existsByCode(normalizedData.code, id);
+      if (existingByCode) {
+        throw new ConflictError(
+          `Country with code '${normalizedData.code}' already exists`,
+        );
+      }
+    }
+
+    if (
+      normalizedData.alpha3 &&
+      normalizedData.alpha3 !== existingCountry.alpha3
+    ) {
+      const existingByAlpha3 = await this.existsByAlpha3(
+        normalizedData.alpha3,
+        id,
+      );
+      if (existingByAlpha3) {
+        throw new ConflictError(
+          `Country with alpha-3 code '${normalizedData.alpha3}' already exists`,
+        );
+      }
+    }
+
+    if (normalizedData.name && normalizedData.name !== existingCountry.name) {
+      const existingByName = await this.existsByName(normalizedData.name, id);
+      if (existingByName) {
+        throw new ConflictError(
+          `Country with name '${normalizedData.name}' already exists`,
+        );
+      }
+    }
+
+    const updatedCountry = await this.prisma.country.update({
+      where: { id },
+      data: {
+        name: normalizedData.name,
+        code: normalizedData.code,
+        alpha3: normalizedData.alpha3,
+        numericCode: normalizedData.numericCode,
+        continent: normalizedData.continent,
+        region: normalizedData.region,
+        currencyId: normalizedData.currencyId,
+        phoneCode: normalizedData.phoneCode,
+        isActive: normalizedData.isActive,
+      },
+    });
+
+    return Country.fromPrisma(updatedCountry);
   }
 
   async delete(id: string): Promise<void> {
-    try {
-      // Check if country exists
-      const existingCountry = await this.findById(id);
-      if (!existingCountry) {
-        throw new Error("Country not found");
-      }
+    const existingCountry = await this.findById(id);
+    if (!existingCountry) {
+      throw new NotFoundError("Country not found");
+    }
 
-      // Check if country is being used by service providers or subscriptions
-      const [serviceProviderCount, subscriptionCount] = await Promise.all([
-        this.prisma.serviceProviderCountry.count({
-          where: { countryId: id },
-        }),
-        this.prisma.subscription.count({
-          where: { countryId: id },
-        }),
-      ]);
+    const [serviceProviderCount, subscriptionCount] = await Promise.all([
+      this.prisma.serviceProviderCountry.count({
+        where: { countryId: id },
+      }),
+      this.prisma.subscription.count({
+        where: { countryId: id },
+      }),
+    ]);
 
-      if (serviceProviderCount > 0) {
-        throw new Error(
-          "Cannot delete country that is being used by service providers"
-        );
-      }
-
-      if (subscriptionCount > 0) {
-        throw new Error(
-          "Cannot delete country that is being used by subscriptions"
-        );
-      }
-
-      await this.prisma.country.delete({
-        where: { id },
-      });
-    } catch (error) {
-      throw new Error(
-        `Failed to delete country: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
+    if (serviceProviderCount > 0) {
+      throw new ConflictError(
+        "Cannot delete country that is being used by service providers",
       );
     }
+
+    if (subscriptionCount > 0) {
+      throw new ConflictError(
+        "Cannot delete country that is being used by subscriptions",
+      );
+    }
+
+    await this.prisma.country.delete({
+      where: { id },
+    });
   }
 
   async existsByCode(code: string, excludeId?: string): Promise<boolean> {
-    try {
-      const where: any = { code: code.toUpperCase() };
-      if (excludeId) {
-        where.id = { not: excludeId };
-      }
-
-      const count = await this.prisma.country.count({ where });
-      return count > 0;
-    } catch (error) {
-      throw new Error(
-        `Failed to check if country exists by code: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
+    const where: Prisma.CountryWhereInput = { code: code.toUpperCase() };
+    if (excludeId) {
+      where.id = { not: excludeId };
     }
+
+    const count = await this.prisma.country.count({ where });
+    return count > 0;
   }
 
   async existsByAlpha3(alpha3: string, excludeId?: string): Promise<boolean> {
-    try {
-      const where: any = { alpha3: alpha3.toUpperCase() };
-      if (excludeId) {
-        where.id = { not: excludeId };
-      }
-
-      const count = await this.prisma.country.count({ where });
-      return count > 0;
-    } catch (error) {
-      throw new Error(
-        `Failed to check if country exists by alpha-3: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
+    const where: Prisma.CountryWhereInput = { alpha3: alpha3.toUpperCase() };
+    if (excludeId) {
+      where.id = { not: excludeId };
     }
+
+    const count = await this.prisma.country.count({ where });
+    return count > 0;
   }
 
   async existsByName(name: string, excludeId?: string): Promise<boolean> {
-    try {
-      const where: any = { name: { equals: name.trim(), mode: "insensitive" } };
-      if (excludeId) {
-        where.id = { not: excludeId };
-      }
-
-      const count = await this.prisma.country.count({ where });
-      return count > 0;
-    } catch (error) {
-      throw new Error(
-        `Failed to check if country exists by name: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
+    const where: Prisma.CountryWhereInput = {
+      name: { equals: name.trim(), mode: "insensitive" },
+    };
+    if (excludeId) {
+      where.id = { not: excludeId };
     }
+
+    const count = await this.prisma.country.count({ where });
+    return count > 0;
   }
 }
 
-// Export a factory function to create repository instance
 export const createCountryRepository = (
-  prisma: PrismaClient
+  prisma: PrismaClient,
 ): ICountryRepository => {
   return new PrismaCountryRepository(prisma);
 };

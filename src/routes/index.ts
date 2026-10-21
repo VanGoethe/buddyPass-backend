@@ -8,60 +8,12 @@ const router = Router();
 /**
  * API version 1 routes
  */
-router.get("/", (req, res) => {
+router.get("/", (_req, res) => {
   res.json({
     message: "BuddyPass API",
-    version: "1.0.0",
+    version: "2.0.0",
     status: "active",
     timestamp: new Date().toISOString(),
-  });
-});
-
-/**
- * @swagger
- * /health:
- *   get:
- *     summary: Health check endpoint
- *     description: Check if the API server is running and healthy
- *     tags: [Health]
- *     security: []
- *     responses:
- *       200:
- *         description: Server is healthy and running
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   enum: [OK]
- *                   description: Health status
- *                 timestamp:
- *                   type: string
- *                   format: date-time
- *                   description: Current server timestamp
- *                 version:
- *                   type: string
- *                   description: API version
- *                 uptime:
- *                   type: number
- *                   description: Server uptime in seconds
- *               required: [status, timestamp]
- *             example:
- *               status: "OK"
- *               timestamp: "2025-06-04T20:50:09.000Z"
- *               version: "1.3.0"
- *               uptime: 3600.5
- *       500:
- *         $ref: '#/components/responses/InternalServerError'
- */
-router.get("/health", (req, res) => {
-  res.json({
-    status: "OK",
-    timestamp: new Date().toISOString(),
-    version: process.env.npm_package_version || "1.3.0",
-    uptime: process.uptime(),
   });
 });
 

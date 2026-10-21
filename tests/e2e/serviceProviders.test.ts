@@ -6,6 +6,7 @@ import request from "supertest";
 import { PrismaClient } from "@prisma/client";
 import App from "../../src/app";
 import { withTestCleanup, TestDataCleanup } from "../utils/testCleanup";
+import { assertTestDatabase } from "../utils/assertTestDatabase";
 import { container } from "../../src/container";
 
 const prisma = new PrismaClient();
@@ -23,16 +24,26 @@ describe("ServiceProvider E2E Tests", () => {
   afterAll(async () => {
     await cleanup.cleanupAll();
     await cleanup.disconnect();
+    await prisma.$disconnect();
   });
 
   beforeEach(async () => {
-    // Clean up ALL service providers before each test to ensure clean state
+    assertTestDatabase();
     await prisma.serviceProvider.deleteMany({});
 
     // Create fresh test user for each test
-    testUser = await cleanup.getOrCreateTestUser(
-      `test-${Date.now()}@serviceProvider.com`
-    );
+    testUser = await prisma.user.create({
+      data: {
+        email: `test-${Date.now()}@serviceProvider.com`,
+        name: "Service Provider Admin",
+        password: "hashed-password",
+        provider: "local",
+        role: "ADMIN",
+        isVerified: true,
+        isActive: true,
+      },
+    });
+    cleanup.trackUser(testUser.id);
 
     // Generate proper JWT token using the user service
     const userService = container.getUserService();
@@ -161,14 +172,7 @@ describe("ServiceProvider E2E Tests", () => {
 
       expect(response.body.success).toBe(false);
       expect(response.body.error.code).toBe("VALIDATION_ERROR");
-      expect(response.body.error.details).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            msg: "Name is required",
-            path: "name",
-          }),
-        ])
-      );
+      expect(response.body.error.message).toBe("Service provider name is required");
     });
 
     it("should return 400 for name too long", async () => {
@@ -185,13 +189,8 @@ describe("ServiceProvider E2E Tests", () => {
 
       expect(response.body.success).toBe(false);
       expect(response.body.error.code).toBe("VALIDATION_ERROR");
-      expect(response.body.error.details).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            msg: "Name must be 100 characters or less",
-            path: "name",
-          }),
-        ])
+      expect(response.body.error.message).toBe(
+        "Service provider name must be 100 characters or less"
       );
     });
 
@@ -209,13 +208,8 @@ describe("ServiceProvider E2E Tests", () => {
 
       expect(response.body.success).toBe(false);
       expect(response.body.error.code).toBe("VALIDATION_ERROR");
-      expect(response.body.error.details).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            msg: "Description must be 500 characters or less",
-            path: "description",
-          }),
-        ])
+      expect(response.body.error.message).toBe(
+        "Service provider description must be 500 characters or less"
       );
     });
 

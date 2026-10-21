@@ -1,13 +1,9 @@
-/**
- * User Repository Implementation
- */
-
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import {
   IUserRepository,
   User,
   CreateUserData,
-  UpdateUserData,
+  UpdateProfileData,
   UserRole,
   FindManyOptions,
   CountOptions,
@@ -17,24 +13,15 @@ export class PrismaUserRepository implements IUserRepository {
   constructor(private prisma: PrismaClient) {}
 
   async findById(id: string): Promise<User | null> {
-    const user = await this.prisma.user.findUnique({
-      where: { id },
-    });
-    return user;
+    return this.prisma.user.findUnique({ where: { id } });
   }
 
   async findByEmail(email: string): Promise<User | null> {
-    const user = await this.prisma.user.findUnique({
-      where: { email },
-    });
-    return user;
+    return this.prisma.user.findUnique({ where: { email } });
   }
 
   async findByGoogleId(googleId: string): Promise<User | null> {
-    const user = await this.prisma.user.findUnique({
-      where: { googleId },
-    });
-    return user;
+    return this.prisma.user.findUnique({ where: { googleId } });
   }
 
   async findMany(options?: FindManyOptions): Promise<User[]> {
@@ -46,9 +33,7 @@ export class PrismaUserRepository implements IUserRepository {
       orderBy = { field: "createdAt", direction: "desc" },
     } = options || {};
 
-    const skip = (page - 1) * limit;
-
-    const where: any = {};
+    const where: Prisma.UserWhereInput = {};
     if (role !== undefined) {
       where.role = role;
     }
@@ -56,38 +41,27 @@ export class PrismaUserRepository implements IUserRepository {
       where.isActive = isActive;
     }
 
-    const users = await this.prisma.user.findMany({
+    return this.prisma.user.findMany({
       where,
-      skip,
+      skip: (page - 1) * limit,
       take: limit,
-      orderBy: {
-        [orderBy.field]: orderBy.direction,
-      },
+      orderBy: { [orderBy.field]: orderBy.direction },
     });
-
-    return users;
   }
 
   async count(options?: CountOptions): Promise<number> {
-    const { role, isActive } = options || {};
-
-    const where: any = {};
-    if (role !== undefined) {
-      where.role = role;
+    const where: Prisma.UserWhereInput = {};
+    if (options?.role !== undefined) {
+      where.role = options.role;
     }
-    if (isActive !== undefined) {
-      where.isActive = isActive;
+    if (options?.isActive !== undefined) {
+      where.isActive = options.isActive;
     }
-
-    const count = await this.prisma.user.count({
-      where,
-    });
-
-    return count;
+    return this.prisma.user.count({ where });
   }
 
   async create(userData: CreateUserData): Promise<User> {
-    const user = await this.prisma.user.create({
+    return this.prisma.user.create({
       data: {
         email: userData.email,
         password: userData.password,
@@ -96,27 +70,47 @@ export class PrismaUserRepository implements IUserRepository {
         provider: userData.provider,
         avatar: userData.avatar,
         role: userData.role || UserRole.USER,
+        isVerified: userData.isVerified ?? false,
       },
     });
-    return user;
   }
 
-  async update(id: string, userData: UpdateUserData): Promise<User> {
-    const user = await this.prisma.user.update({
+  async updateProfile(id: string, userData: UpdateProfileData): Promise<User> {
+    return this.prisma.user.update({
       where: { id },
-      data: userData,
+      data: {
+        name: userData.name,
+        avatar: userData.avatar,
+        password: userData.password,
+        googleId: userData.googleId,
+        provider: userData.provider,
+        isVerified: userData.isVerified,
+        lastLoginAt: userData.lastLoginAt,
+      },
     });
-    return user;
+  }
+
+  async updateRole(id: string, role: UserRole): Promise<User> {
+    return this.prisma.user.update({
+      where: { id },
+      data: { role },
+    });
+  }
+
+  async updateStatus(id: string, isActive: boolean): Promise<User> {
+    return this.prisma.user.update({
+      where: { id },
+      data: { isActive },
+    });
   }
 
   async delete(id: string): Promise<void> {
-    await this.prisma.user.delete({
-      where: { id },
-    });
+    await this.prisma.user.delete({ where: { id } });
   }
 }
 
-// Export a factory function to create repository instance
-export const createUserRepository = (prisma: PrismaClient): IUserRepository => {
+export const createUserRepository = (
+  prisma: PrismaClient
+): IUserRepository => {
   return new PrismaUserRepository(prisma);
 };

@@ -84,9 +84,9 @@ npm run create-admin
 
 Environment variables can be used to customize:
 
-- `ADMIN_EMAIL`: Admin email (default: admin@buddypass.com)
-- `ADMIN_PASSWORD`: Admin password (default: AdminPass123!)
-- `ADMIN_NAME`: Admin name (default: BuddyPass Admin)
+- `ADMIN_EMAIL`: Admin email (required)
+- `ADMIN_PASSWORD`: Admin password (required; no default)
+- `ADMIN_NAME`: Admin name (optional; defaults to BuddyPass Admin)
 
 ### Method 2: API Endpoint (Admin-only)
 

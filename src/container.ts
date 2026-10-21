@@ -3,6 +3,7 @@
  */
 
 import { PrismaClient } from "@prisma/client";
+import { getPrismaClient } from "./config/database";
 import { createUserRepository } from "./repositories/users";
 import { createUserService } from "./services/users";
 import { createUserController } from "./controllers/users";
@@ -52,6 +53,8 @@ import { createCurrencyService } from "./services/currencies";
 import { createCurrencyController } from "./controllers/currencies";
 import { ICurrencyRepository, ICurrencyService } from "./types/currencies";
 import { CurrencyController } from "./controllers/currencies";
+import { AdminController } from "./controllers/admin";
+import { AdminService, createAdminService } from "./services/admin";
 
 export class Container {
   private static instance: Container;
@@ -84,10 +87,12 @@ export class Container {
   private currencyRepository: ICurrencyRepository;
   private currencyService: ICurrencyService;
   private currencyController: CurrencyController;
+  private adminService: AdminService;
+  private adminController: AdminController;
 
   private constructor() {
     // Initialize Prisma client
-    this.prisma = new PrismaClient();
+    this.prisma = getPrismaClient();
 
     // Initialize Currency module (base dependency)
     this.currencyRepository = createCurrencyRepository(this.prisma);
@@ -101,7 +106,7 @@ export class Container {
 
     // Initialize User module
     this.userRepository = createUserRepository(this.prisma);
-    this.userService = createUserService(this.userRepository);
+    this.userService = createUserService(this.userRepository, this.prisma);
     this.userController = createUserController(this.userService);
 
     // Initialize ServiceProvider module
@@ -125,10 +130,7 @@ export class Container {
       new PrismaSubscriptionRequestRepository(this.prisma);
 
     // Initialize slot assignment service
-    this.slotAssignmentService = new SlotAssignmentService(
-      this.subscriptionRepository,
-      this.subscriptionSlotRepository
-    );
+    this.slotAssignmentService = new SlotAssignmentService(this.prisma);
 
     // Initialize Subscription service with all dependencies
     this.subscriptionService = new SubscriptionService(
@@ -143,6 +145,14 @@ export class Container {
     this.subscriptionController = createSubscriptionController(
       this.subscriptionService
     );
+
+    this.adminService = createAdminService(
+      this.userRepository,
+      this.userService,
+      this.subscriptionRepository,
+      this.serviceProviderRepository
+    );
+    this.adminController = new AdminController(this.adminService);
   }
 
   public static getInstance(): Container {
@@ -227,6 +237,10 @@ export class Container {
 
   public getCurrencyController(): CurrencyController {
     return this.currencyController;
+  }
+
+  public getAdminController(): AdminController {
+    return this.adminController;
   }
 
   // General getters

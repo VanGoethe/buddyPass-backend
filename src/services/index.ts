@@ -14,15 +14,18 @@ export abstract class BaseService {
   /**
    * Handle service errors consistently
    */
-  protected handleError(error: any, operation: string): never {
-    console.error(`Service error in ${operation}:`, error);
-    throw new Error(`Failed to ${operation}: ${error.message}`);
+  protected handleError(error: unknown, operation: string): never {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    throw new Error(`Failed to ${operation}: ${message}`);
   }
 
   /**
    * Validate required fields
    */
-  protected validateRequiredFields(data: any, requiredFields: string[]): void {
+  protected validateRequiredFields(
+    data: Record<string, unknown>,
+    requiredFields: string[]
+  ): void {
     const missingFields = requiredFields.filter((field) => !data[field]);
     if (missingFields.length > 0) {
       throw new Error(`Missing required fields: ${missingFields.join(", ")}`);

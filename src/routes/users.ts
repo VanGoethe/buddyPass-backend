@@ -3,43 +3,26 @@
  * Following MVP endpoint structure
  */
 
-import { Router, Request, Response } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import passport from "../config/passport";
 import { container } from "../container";
-import { getRateLimitForEndpoint } from "../config";
+import { authenticateJWT } from "../middleware/auth";
+import { validate } from "../middleware/validate";
 import {
-  authenticateJWT,
-  authRateLimit,
-  validateRequest,
-  optionalAuth,
-} from "../middleware/auth";
+  loginRateLimiter,
+  registerRateLimiter,
+  passwordChangeRateLimiter,
+} from "../middleware/rateLimit";
 import {
-  registerValidation,
-  loginValidation,
-  updateProfileValidation,
-  changePasswordValidation,
-} from "../utils/validation";
+  changePasswordSchema,
+  loginSchema,
+  refreshSchema,
+  registerSchema,
+  updateProfileSchema,
+} from "../types/schemas";
 
 const router = Router();
 const userController = container.getUserController();
-
-// Rate limiting for user auth endpoints using centralized configuration
-const loginConfig = getRateLimitForEndpoint("login");
-const registerConfig = getRateLimitForEndpoint("register");
-const passwordChangeConfig = getRateLimitForEndpoint("passwordChange");
-
-const loginRateLimit = authRateLimit(
-  loginConfig.maxAttempts,
-  loginConfig.windowMs
-);
-const registerRateLimit = authRateLimit(
-  registerConfig.maxAttempts,
-  registerConfig.windowMs
-);
-const passwordChangeRateLimit = authRateLimit(
-  passwordChangeConfig.maxAttempts,
-  passwordChangeConfig.windowMs
-);
 
 /**
  * @swagger
@@ -69,7 +52,8 @@ const passwordChangeRateLimit = authRateLimit(
  *             example:
  *               success: true
  *               data:
- *                 token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+ *                 accessToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+ *                 refreshToken: "opaque-refresh-token"
  *                 user:
  *                   id: "cm4abc123def456ghi"
  *                   email: "user@example.com"
@@ -98,11 +82,10 @@ const passwordChangeRateLimit = authRateLimit(
  */
 router.post(
   "/register",
-  registerRateLimit,
-  registerValidation,
-  validateRequest,
-  (req: Request, res: Response) => {
-    userController.register(req, res);
+  registerRateLimiter,
+  validate(registerSchema),
+  (req: Request, res: Response, next: NextFunction) => {
+    void userController.register(req, res, next);
   }
 );
 
@@ -133,7 +116,8 @@ router.post(
  *             example:
  *               success: true
  *               data:
- *                 token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+ *                 accessToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+ *                 refreshToken: "opaque-refresh-token"
  *                 user:
  *                   id: "cm4abc123def456ghi"
  *                   email: "user@example.com"
@@ -165,7 +149,7 @@ router.post(
  *             example:
  *               success: false
  *               error:
- *                 code: "ACCOUNT_DEACTIVATED"
+ *                 code: "USER_INACTIVE"
  *                 message: "Your account has been deactivated"
  *       429:
  *         $ref: '#/components/responses/RateLimitError'
@@ -174,24 +158,50 @@ router.post(
  */
 router.post(
   "/login",
-  loginRateLimit,
-  loginValidation,
-  validateRequest,
-  (req: Request, res: Response) => {
-    userController.login(req, res);
+  loginRateLimiter,
+  validate(loginSchema),
+  (req: Request, res: Response, next: NextFunction) => {
+    void userController.login(req, res, next);
   }
 );
 
 /**
  * @swagger
+ * /users/refresh:
+ *   post:
+ *     summary: Rotate a refresh token
+ *     description: Returns a new access token and refresh token. Reuse of a rotated token revokes the token family.
+ *     tags: [Authentication]
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/RefreshRequest'
+ *     responses:
+ *       200:
+ *         description: Tokens rotated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthResponse'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       429:
+ *         $ref: '#/components/responses/RateLimitError'
  * /users/logout:
  *   post:
- *     summary: Logout user (client-side token disposal)
- *     description: Instructs client to dispose of JWT token. No server-side action required for stateless JWT. Authentication is optional - works with both valid and expired tokens.
+ *     summary: Revoke a refresh token
+ *     description: Revokes the presented refresh token. Send it in the body.
  *     tags: [Authentication]
- *     security:
- *       - BearerAuth: []
- *       - {}
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/RefreshRequest'
  *     responses:
  *       200:
  *         description: Logout successful
@@ -205,11 +215,22 @@ router.post(
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-// The logout route uses optionalAuth to allow both authenticated and unauthenticated users to access it.
-// This is because the client-side token disposal does not require server-side validation of the token.
-router.post("/logout", optionalAuth, (req: Request, res: Response) => {
-  userController.logout(req, res);
-});
+router.post(
+  "/refresh",
+  loginRateLimiter,
+  validate(refreshSchema),
+  (req: Request, res: Response, next: NextFunction) => {
+    void userController.refresh(req, res, next);
+  }
+);
+
+router.post(
+  "/logout",
+  validate(refreshSchema),
+  (req: Request, res: Response, next: NextFunction) => {
+    void userController.logout(req, res, next);
+  }
+);
 
 /**
  * @swagger
@@ -253,9 +274,13 @@ router.post("/logout", optionalAuth, (req: Request, res: Response) => {
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.get("/profile", authenticateJWT, (req: Request, res: Response) => {
-  userController.getProfile(req, res);
-});
+router.get(
+  "/profile",
+  authenticateJWT,
+  (req: Request, res: Response, next: NextFunction) => {
+    void userController.getProfile(req, res, next);
+  }
+);
 
 /**
  * @swagger
@@ -314,10 +339,9 @@ router.get("/profile", authenticateJWT, (req: Request, res: Response) => {
 router.put(
   "/profile",
   authenticateJWT,
-  updateProfileValidation,
-  validateRequest,
-  (req: Request, res: Response) => {
-    userController.updateProfile(req, res);
+  validate(updateProfileSchema),
+  (req: Request, res: Response, next: NextFunction) => {
+    void userController.updateProfile(req, res, next);
   }
 );
 
@@ -374,12 +398,11 @@ router.put(
  */
 router.put(
   "/change-password",
-  passwordChangeRateLimit,
+  passwordChangeRateLimiter,
   authenticateJWT,
-  changePasswordValidation,
-  validateRequest,
-  (req: Request, res: Response) => {
-    userController.changePassword(req, res);
+  validate(changePasswordSchema),
+  (req: Request, res: Response, next: NextFunction) => {
+    void userController.changePassword(req, res, next);
   }
 );
 
@@ -441,7 +464,8 @@ router.get(
  *             example:
  *               success: true
  *               data:
- *                 token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+ *                 accessToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+ *                 refreshToken: "opaque-refresh-token"
  *                 user:
  *                   id: "cm4abc123def456ghi"
  *                   email: "user@gmail.com"
@@ -470,8 +494,8 @@ router.get(
 router.get(
   "/auth/google/callback",
   passport.authenticate("google", { session: false }),
-  (req: Request, res: Response) => {
-    userController.googleCallback(req, res);
+  (req: Request, res: Response, next: NextFunction) => {
+    void userController.googleCallback(req, res, next);
   }
 );
 

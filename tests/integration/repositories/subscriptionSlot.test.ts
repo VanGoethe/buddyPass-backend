@@ -1,10 +1,14 @@
 import { PrismaClient } from "@prisma/client";
 import {
-  PrismaSubscriptionSlotRepository,
   PrismaSubscriptionRequestRepository,
+  PrismaSubscriptionSlotRepository,
 } from "../../../src/repositories/subscriptions";
 import { SubscriptionRequestStatus } from "../../../src/types/subscriptions";
 import { withTestCleanup, TestDataCleanup } from "../../utils/testCleanup";
+import {
+  FUTURE_EXPIRES_AT,
+  subscriptionSecrets,
+} from "../../utils/subscriptionFixture";
 
 const prisma = new PrismaClient();
 
@@ -22,153 +26,128 @@ describe("Subscription Slot Repository Integration", () => {
   });
 
   it(
-    "should create and find subscription slots",
+    "creates and finds subscription slots",
     withTestCleanup(async (cleanup: TestDataCleanup) => {
-      // Create test data
-      const user = await cleanup.getOrCreateTestUser("slottest@example.com");
+      const user = await cleanup.getOrCreateTestUser(
+        `slottest-${Date.now()}@example.com`
+      );
       const country = await cleanup.getOrCreateTestCountry(
-        "US",
-        "United States"
+        `S${Date.now().toString().slice(-6)}`,
+        "Slot Test Country"
       );
       const serviceProvider = await cleanup.getOrCreateTestServiceProvider(
-        "Test Provider"
+        `Slot Provider ${Date.now()}`
       );
-
-      // Link service provider to country
-      await prisma.serviceProviderCountry.create({
-        data: {
-          serviceProviderId: serviceProvider.id,
-          countryId: country.id,
-        },
-      });
-
-      // Create subscription
       const subscription = await prisma.subscription.create({
         data: {
           serviceProviderId: serviceProvider.id,
           countryId: country.id,
           name: "Test Subscription",
-          email: "test@example.com",
-          passwordHash: "$2b$10$test.hash",
-          availableSlots: 5,
-          expiresAt: new Date("2025-12-31"),
+          email: `slot-${Date.now()}@example.com`,
+          ...subscriptionSecrets(),
+          maxSlots: 5,
+          expiresAt: FUTURE_EXPIRES_AT,
         },
       });
       cleanup.trackSubscription(subscription.id);
 
-      // Test slot creation
-      const slotData = {
+      const createdSlot = await slotRepository.create({
         userId: user.id,
         subscriptionId: subscription.id,
-      };
+      });
+      cleanup.trackSubscriptionSlot(createdSlot.id);
 
-      const createdSlot = await slotRepository.create(slotData);
       expect(createdSlot.userId).toBe(user.id);
       expect(createdSlot.subscriptionId).toBe(subscription.id);
 
-      // Test finding slot by user and service provider
-      const foundSlot = await slotRepository.findByUserAndServiceProvider(
+      const foundSlot = await slotRepository.findActiveByUserAndProvider(
         user.id,
         serviceProvider.id
       );
-      expect(foundSlot).toBeTruthy();
-      expect(foundSlot!.id).toBe(createdSlot.id);
+      expect(foundSlot?.id).toBe(createdSlot.id);
 
-      // Test finding slot by user and subscription
-      const foundBySubscription =
-        await slotRepository.findByUserAndSubscription(
-          user.id,
-          subscription.id
-        );
-      expect(foundBySubscription).toBeTruthy();
-      expect(foundBySubscription!.id).toBe(createdSlot.id);
+      const foundBySubscription = await slotRepository.findByUserAndSubscription(
+        user.id,
+        subscription.id
+      );
+      expect(foundBySubscription?.id).toBe(createdSlot.id);
     })
   );
 
   it(
-    "should create and manage subscription requests",
+    "creates and updates subscription requests",
     withTestCleanup(async (cleanup: TestDataCleanup) => {
-      // Create test data
-      const user = await cleanup.getOrCreateTestUser("requesttest@example.com");
-      const country = await cleanup.getOrCreateTestCountry("CA", "Canada");
+      const user = await cleanup.getOrCreateTestUser(
+        `requesttest-${Date.now()}@example.com`
+      );
+      const country = await cleanup.getOrCreateTestCountry(
+        `R${Date.now().toString().slice(-6)}`,
+        "Request Test Country"
+      );
       const serviceProvider = await cleanup.getOrCreateTestServiceProvider(
-        "Request Provider"
+        `Request Provider ${Date.now()}`
       );
 
-      // Test request creation
-      const requestData = {
+      const createdRequest = await requestRepository.create({
         userId: user.id,
         serviceProviderId: serviceProvider.id,
         countryId: country.id,
-      };
+      });
+      cleanup.trackSubscriptionRequest(createdRequest.id);
 
-      const createdRequest = await requestRepository.create(requestData);
-      expect(createdRequest.userId).toBe(user.id);
-      expect(createdRequest.serviceProviderId).toBe(serviceProvider.id);
       expect(createdRequest.status).toBe(SubscriptionRequestStatus.PENDING);
 
-      // Test finding pending requests
-      const pendingRequests =
-        await requestRepository.findPendingByServiceProvider(
-          serviceProvider.id
-        );
-      expect(pendingRequests.length).toBe(1);
-      expect(pendingRequests[0].id).toBe(createdRequest.id);
-
-      // Test status update
-      const updatedRequest = await requestRepository.updateStatus(
-        createdRequest.id,
-        SubscriptionRequestStatus.ASSIGNED
+      const pending = await requestRepository.findPendingByProviderAndCountry(
+        serviceProvider.id,
+        country.id
       );
-      expect(updatedRequest.status).toBe(SubscriptionRequestStatus.ASSIGNED);
+      expect(pending.map((request) => request.id)).toContain(createdRequest.id);
+
+      const updated = await requestRepository.update(createdRequest.id, {
+        status: SubscriptionRequestStatus.ASSIGNED,
+      });
+      expect(updated.status).toBe(SubscriptionRequestStatus.ASSIGNED);
     })
   );
 
   it(
-    "should prevent duplicate slots for same user and subscription",
+    "prevents duplicate slots for the same user and subscription",
     withTestCleanup(async (cleanup: TestDataCleanup) => {
-      // Create test data
-      const user = await cleanup.getOrCreateTestUser("duplicate@example.com");
+      const user = await cleanup.getOrCreateTestUser(
+        `duplicate-${Date.now()}@example.com`
+      );
       const country = await cleanup.getOrCreateTestCountry(
-        "UK",
-        "United Kingdom"
+        `D${Date.now().toString().slice(-6)}`,
+        "Duplicate Slot Country"
       );
       const serviceProvider = await cleanup.getOrCreateTestServiceProvider(
-        "Duplicate Provider"
+        `Duplicate Provider ${Date.now()}`
       );
-
-      // Link service provider to country
-      await prisma.serviceProviderCountry.create({
-        data: {
-          serviceProviderId: serviceProvider.id,
-          countryId: country.id,
-        },
-      });
-
-      // Create subscription
       const subscription = await prisma.subscription.create({
         data: {
           serviceProviderId: serviceProvider.id,
           countryId: country.id,
           name: "Duplicate Test Subscription",
-          email: "duplicate@example.com",
-          passwordHash: "$2b$10$test.hash",
-          availableSlots: 5,
-          expiresAt: new Date("2025-12-31"),
+          email: `duplicate-sub-${Date.now()}@example.com`,
+          ...subscriptionSecrets(),
+          maxSlots: 5,
+          expiresAt: FUTURE_EXPIRES_AT,
         },
       });
       cleanup.trackSubscription(subscription.id);
 
-      // Create first slot
-      const slotData = {
+      const slot = await slotRepository.create({
         userId: user.id,
         subscriptionId: subscription.id,
-      };
+      });
+      cleanup.trackSubscriptionSlot(slot.id);
 
-      await slotRepository.create(slotData);
-
-      // Try to create duplicate slot - should throw
-      await expect(slotRepository.create(slotData)).rejects.toThrow();
+      await expect(
+        slotRepository.create({
+          userId: user.id,
+          subscriptionId: subscription.id,
+        })
+      ).rejects.toThrow();
     })
   );
 });

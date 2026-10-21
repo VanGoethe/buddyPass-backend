@@ -2,12 +2,28 @@
  * Country Domain Model
  */
 
+import { Prisma } from "@prisma/client";
 import {
   ICountry,
   CreateCountryData,
   UpdateCountryData,
   CountryResponse,
 } from "../../types/countries";
+import { ValidationError } from "../../utils/errors";
+
+export type CountryRecord = Prisma.CountryGetPayload<Record<string, never>>;
+
+interface NormalizedCountryData {
+  name?: string;
+  code?: string;
+  alpha3?: string;
+  numericCode?: string | null;
+  continent?: string | null;
+  region?: string | null;
+  currencyId?: string | null;
+  phoneCode?: string | null;
+  isActive?: boolean;
+}
 
 export class Country implements ICountry {
   public readonly id: string;
@@ -42,58 +58,53 @@ export class Country implements ICountry {
    * Validates country creation data
    */
   public static validateCreateData(data: CreateCountryData): void {
-    // Validate required fields
     if (!data.name || data.name.trim().length === 0) {
-      throw new Error("Country name is required");
+      throw new ValidationError("Country name is required");
     }
 
     if (!data.code || data.code.trim().length === 0) {
-      throw new Error("Country ISO code is required");
+      throw new ValidationError("Country ISO code is required");
     }
 
     if (!data.alpha3 || data.alpha3.trim().length === 0) {
-      throw new Error("Country alpha-3 code is required");
+      throw new ValidationError("Country alpha-3 code is required");
     }
 
-    // Validate field lengths
     if (data.name.trim().length > 100) {
-      throw new Error("Country name must be 100 characters or less");
+      throw new ValidationError("Country name must be 100 characters or less");
     }
 
-    // Validate ISO codes format
     const codeRegex = /^[A-Z]{2}$/;
     if (!codeRegex.test(data.code.trim().toUpperCase())) {
-      throw new Error(
-        "Country code must be a valid 2-letter ISO 3166-1 alpha-2 code"
+      throw new ValidationError(
+        "Country code must be a valid 2-letter ISO 3166-1 alpha-2 code",
       );
     }
 
     const alpha3Regex = /^[A-Z]{3}$/;
     if (!alpha3Regex.test(data.alpha3.trim().toUpperCase())) {
-      throw new Error(
-        "Country alpha-3 code must be a valid 3-letter ISO 3166-1 alpha-3 code"
+      throw new ValidationError(
+        "Country alpha-3 code must be a valid 3-letter ISO 3166-1 alpha-3 code",
       );
     }
 
-    // Validate numeric code if provided
     if (data.numericCode) {
       const numericRegex = /^\d{3}$/;
       if (!numericRegex.test(data.numericCode.trim())) {
-        throw new Error(
-          "Country numeric code must be a valid 3-digit ISO 3166-1 numeric code"
+        throw new ValidationError(
+          "Country numeric code must be a valid 3-digit ISO 3166-1 numeric code",
         );
       }
     }
 
-    // Validate phone code if provided
     if (data.phoneCode) {
       const phoneCodeRegex = /^\+\d{1,4}$/;
       if (!phoneCodeRegex.test(data.phoneCode.trim())) {
-        throw new Error("Phone code must be in format +X or +XXX or +XXXX");
+        throw new ValidationError(
+          "Phone code must be in format +X or +XXX or +XXXX",
+        );
       }
     }
-
-    // Currency validation is handled by foreign key constraints in the database
   }
 
   /**
@@ -102,36 +113,38 @@ export class Country implements ICountry {
   public static validateUpdateData(data: UpdateCountryData): void {
     if (data.name !== undefined) {
       if (!data.name || data.name.trim().length === 0) {
-        throw new Error("Country name is required");
+        throw new ValidationError("Country name is required");
       }
 
       if (data.name.trim().length > 100) {
-        throw new Error("Country name must be 100 characters or less");
+        throw new ValidationError(
+          "Country name must be 100 characters or less",
+        );
       }
     }
 
     if (data.code !== undefined) {
       if (!data.code || data.code.trim().length === 0) {
-        throw new Error("Country ISO code is required");
+        throw new ValidationError("Country ISO code is required");
       }
 
       const codeRegex = /^[A-Z]{2}$/;
       if (!codeRegex.test(data.code.trim().toUpperCase())) {
-        throw new Error(
-          "Country code must be a valid 2-letter ISO 3166-1 alpha-2 code"
+        throw new ValidationError(
+          "Country code must be a valid 2-letter ISO 3166-1 alpha-2 code",
         );
       }
     }
 
     if (data.alpha3 !== undefined) {
       if (!data.alpha3 || data.alpha3.trim().length === 0) {
-        throw new Error("Country alpha-3 code is required");
+        throw new ValidationError("Country alpha-3 code is required");
       }
 
       const alpha3Regex = /^[A-Z]{3}$/;
       if (!alpha3Regex.test(data.alpha3.trim().toUpperCase())) {
-        throw new Error(
-          "Country alpha-3 code must be a valid 3-letter ISO 3166-1 alpha-3 code"
+        throw new ValidationError(
+          "Country alpha-3 code must be a valid 3-letter ISO 3166-1 alpha-3 code",
         );
       }
     }
@@ -139,8 +152,8 @@ export class Country implements ICountry {
     if (data.numericCode !== undefined && data.numericCode) {
       const numericRegex = /^\d{3}$/;
       if (!numericRegex.test(data.numericCode.trim())) {
-        throw new Error(
-          "Country numeric code must be a valid 3-digit ISO 3166-1 numeric code"
+        throw new ValidationError(
+          "Country numeric code must be a valid 3-digit ISO 3166-1 numeric code",
         );
       }
     }
@@ -148,20 +161,20 @@ export class Country implements ICountry {
     if (data.phoneCode !== undefined && data.phoneCode) {
       const phoneCodeRegex = /^\+\d{1,4}$/;
       if (!phoneCodeRegex.test(data.phoneCode.trim())) {
-        throw new Error("Phone code must be in format +X or +XXX or +XXXX");
+        throw new ValidationError(
+          "Phone code must be in format +X or +XXX or +XXXX",
+        );
       }
     }
-
-    // Currency validation is handled by foreign key constraints in the database
   }
 
   /**
    * Normalizes country data for storage
    */
   public static normalizeData(
-    data: CreateCountryData | UpdateCountryData
-  ): any {
-    const normalized: any = {};
+    data: CreateCountryData | UpdateCountryData,
+  ): NormalizedCountryData {
+    const normalized: NormalizedCountryData = {};
 
     if (data.name !== undefined) {
       normalized.name = data.name.trim();
@@ -227,7 +240,7 @@ export class Country implements ICountry {
   /**
    * Creates a Country instance from Prisma result
    */
-  public static fromPrisma(data: any): Country {
+  public static fromPrisma(data: CountryRecord): Country {
     return new Country({
       id: data.id,
       name: data.name,

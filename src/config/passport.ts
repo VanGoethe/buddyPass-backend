@@ -1,103 +1,69 @@
 import passport from "passport";
-import { Strategy as GoogleStrategy } from "passport-google-oauth20";
+import { Strategy as GoogleStrategy, Profile } from "passport-google-oauth20";
 import { Strategy as JwtStrategy, ExtractJwt } from "passport-jwt";
-import { PrismaClient } from "@prisma/client";
 import { authConfig } from "./auth";
+import { env } from "./env";
+import { getPrismaClient } from "./database";
+import { GoogleProfile } from "../types/users";
 
-const prisma = new PrismaClient();
-
-// Google OAuth Strategy
-passport.use(
-  new GoogleStrategy(
-    {
-      clientID: authConfig.google.clientId,
-      clientSecret: authConfig.google.clientSecret,
-      callbackURL: authConfig.google.callbackUrl,
-    },
-    async (accessToken, refreshToken, profile, done) => {
-      try {
-        // Check if user already exists
-        let user = await prisma.user.findUnique({
-          where: { googleId: profile.id },
-        });
-
-        if (user) {
-          // Update last login
-          user = await prisma.user.update({
-            where: { id: user.id },
-            data: { lastLoginAt: new Date() },
-          });
-          return done(null, user);
+if (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) {
+  passport.use(
+    new GoogleStrategy(
+      {
+        clientID: env.GOOGLE_CLIENT_ID,
+        clientSecret: env.GOOGLE_CLIENT_SECRET,
+        callbackURL: env.GOOGLE_CALLBACK_URL,
+      },
+      (
+        _accessToken: string,
+        _refreshToken: string,
+        profile: Profile,
+        done: (error: Error | null, user?: Express.User | false) => void
+      ) => {
+        const emailEntry = profile.emails?.[0];
+        if (!emailEntry?.value) {
+          done(null, false);
+          return;
         }
 
-        // Check if user exists with same email
-        const existingUser = await prisma.user.findUnique({
-          where: { email: profile.emails?.[0]?.value },
-        });
-
-        if (existingUser) {
-          // Link Google account to existing user
-          user = await prisma.user.update({
-            where: { id: existingUser.id },
-            data: {
-              googleId: profile.id,
-              provider: "google",
-              avatar: profile.photos?.[0]?.value,
-              lastLoginAt: new Date(),
-            },
-          });
-          return done(null, user);
-        }
-
-        // Create new user
-        user = await prisma.user.create({
-          data: {
-            email: profile.emails?.[0]?.value || "",
-            name: profile.displayName,
-            googleId: profile.id,
-            provider: "google",
-            avatar: profile.photos?.[0]?.value,
-            isVerified: true, // Google accounts are pre-verified
-            lastLoginAt: new Date(),
-          },
-        });
-
-        return done(null, user);
-      } catch (error) {
-        return done(error, false);
+        const googleProfile: GoogleProfile = {
+          googleId: profile.id,
+          email: emailEntry.value,
+          name: profile.displayName,
+          avatar: profile.photos?.[0]?.value,
+          emailVerified: emailEntry.verified === true,
+        };
+        done(null, googleProfile as unknown as Express.User);
       }
-    }
-  )
-);
+    )
+  );
+}
 
-// JWT Strategy
 passport.use(
   new JwtStrategy(
     {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       secretOrKey: authConfig.jwt.secret,
+      algorithms: ["HS256"],
+      issuer: authConfig.jwt.issuer,
+      audience: authConfig.jwt.audience,
     },
-    async (payload, done) => {
+    async (payload: { userId?: string }, done) => {
       try {
-        const user = await prisma.user.findUnique({
-          where: { id: payload.userId },
-          select: {
-            id: true,
-            email: true,
-            name: true,
-            avatar: true,
-            isVerified: true,
-            isActive: true,
-          },
-        });
-
-        if (user && user.isActive) {
-          return done(null, user);
+        if (!payload.userId) {
+          done(null, false);
+          return;
         }
-
-        return done(null, false);
+        const user = await getPrismaClient().user.findUnique({
+          where: { id: payload.userId },
+        });
+        if (user && user.isActive) {
+          done(null, user);
+          return;
+        }
+        done(null, false);
       } catch (error) {
-        return done(error, false);
+        done(error as Error, false);
       }
     }
   )

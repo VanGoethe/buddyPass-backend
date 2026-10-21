@@ -2,10 +2,9 @@
  * User Types and DTOs
  */
 
-import { UserRole } from "@prisma/client";
+import { AuthProvider, UserRole } from "@prisma/client";
 
-// Re-export UserRole for convenience
-export { UserRole };
+export { AuthProvider, UserRole };
 
 // Base User interface
 export interface User {
@@ -15,7 +14,7 @@ export interface User {
   password?: string | null;
   avatar?: string | null;
   googleId?: string | null;
-  provider?: string | null;
+  provider?: AuthProvider | null;
   role: UserRole;
   isVerified: boolean;
   isActive: boolean;
@@ -30,8 +29,10 @@ export interface UserResponse {
   email: string;
   name?: string | null;
   avatar?: string | null;
-  provider?: string | null;
+  provider?: AuthProvider | null;
   role: UserRole;
+  isVerified: boolean;
+  isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -43,13 +44,16 @@ export interface RegisterRequest {
   name?: string;
 }
 
+export interface AuthSession {
+  user: UserResponse;
+  accessToken: string;
+  refreshToken: string;
+}
+
 export interface RegisterResponse {
   success: boolean;
   message: string;
-  data: {
-    user: UserResponse;
-    accessToken: string;
-  };
+  data: AuthSession;
 }
 
 // Login DTOs
@@ -61,16 +65,15 @@ export interface LoginRequest {
 export interface LoginResponse {
   success: boolean;
   message: string;
-  data: {
-    user: UserResponse;
-    accessToken: string;
-  };
+  data: AuthSession;
 }
 
-// Logout DTOs
-export interface LogoutResponse {
-  success: boolean;
-  message: string;
+export interface RefreshRequest {
+  refreshToken: string;
+}
+
+export interface LogoutRequest {
+  refreshToken: string;
 }
 
 // Profile DTOs
@@ -122,12 +125,16 @@ export interface CreateAdminResponse {
 }
 
 // Google OAuth DTOs
-export interface GoogleOAuthUser {
+export interface GoogleProfile {
   googleId: string;
   email: string;
   name?: string;
   avatar?: string;
+  emailVerified: boolean;
 }
+
+/** @deprecated Use GoogleProfile */
+export type GoogleOAuthUser = GoogleProfile;
 
 export interface GoogleCallbackResponse {
   success: boolean;
@@ -151,21 +158,24 @@ export interface CreateUserData {
   password?: string;
   name?: string;
   googleId?: string;
-  provider: string;
+  provider: AuthProvider;
   avatar?: string;
   role?: UserRole;
+  isVerified?: boolean;
 }
 
-// User update data for repository
-export interface UpdateUserData {
+export interface UpdateProfileData {
   name?: string | null;
   avatar?: string | null;
   password?: string;
-  role?: UserRole;
-  isActive?: boolean;
+  googleId?: string | null;
+  provider?: AuthProvider;
+  isVerified?: boolean;
+  lastLoginAt?: Date | null;
 }
 
-// Repository interfaces
+export type UpdateUserData = UpdateProfileData;
+
 export interface IUserRepository {
   findById(id: string): Promise<User | null>;
   findByEmail(email: string): Promise<User | null>;
@@ -173,7 +183,9 @@ export interface IUserRepository {
   findMany(options?: FindManyOptions): Promise<User[]>;
   count(options?: CountOptions): Promise<number>;
   create(userData: CreateUserData): Promise<User>;
-  update(id: string, userData: UpdateUserData): Promise<User>;
+  updateProfile(id: string, userData: UpdateProfileData): Promise<User>;
+  updateRole(id: string, role: UserRole): Promise<User>;
+  updateStatus(id: string, isActive: boolean): Promise<User>;
   delete(id: string): Promise<void>;
 }
 
@@ -197,22 +209,21 @@ export interface CountOptions {
 
 // Service interfaces
 export interface IUserService {
-  register(data: RegisterRequest): Promise<RegisterResponse>;
-  login(data: LoginRequest): Promise<LoginResponse>;
-  logout(): Promise<LogoutResponse>;
-  getProfile(userId: string): Promise<GetProfileResponse>;
+  register(data: RegisterRequest): Promise<AuthSession>;
+  login(data: LoginRequest): Promise<AuthSession>;
+  refresh(refreshToken: string): Promise<AuthSession>;
+  logout(refreshToken: string): Promise<void>;
+  getProfile(userId: string): Promise<UserResponse>;
   updateProfile(
     userId: string,
     data: UpdateProfileRequest
-  ): Promise<UpdateProfileResponse>;
-  changePassword(
-    userId: string,
-    data: ChangePasswordRequest
-  ): Promise<ChangePasswordResponse>;
-  handleGoogleOAuth(googleUser: GoogleOAuthUser): Promise<User>;
+  ): Promise<UserResponse>;
+  changePassword(userId: string, data: ChangePasswordRequest): Promise<void>;
+  handleGoogleOAuth(googleUser: GoogleProfile): Promise<User>;
+  issueSession(user: User): Promise<AuthSession>;
   hashPassword(password: string): Promise<string>;
   comparePassword(password: string, hash: string): Promise<boolean>;
   generateAccessToken(payload: TokenPayload): string;
   verifyAccessToken(token: string): TokenPayload | null;
-  createAdmin(data: CreateAdminRequest): Promise<CreateAdminResponse>;
+  createAdmin(data: CreateAdminRequest): Promise<UserResponse>;
 }

@@ -14,6 +14,7 @@ const mockServiceProviderRepository: jest.Mocked<IServiceProviderRepository> = {
   findMany: jest.fn(),
   update: jest.fn(),
   delete: jest.fn(),
+  count: jest.fn(),
   existsByName: jest.fn(),
   addSupportedCountries: jest.fn(),
   removeSupportedCountries: jest.fn(),

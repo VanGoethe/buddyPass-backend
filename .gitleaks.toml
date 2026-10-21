@@ -1,0 +1,11 @@
+title = "BuddyPass"
+
+[allowlist]
+description = "Local env templates and generated trees"
+paths = [
+  '''(^|/)\.env$''',
+  '''(^|/)env\.example$''',
+  '''(^|/)node_modules(/|$)''',
+  '''(^|/)dist(/|$)''',
+  '''(^|/)coverage(/|$)''',
+]
