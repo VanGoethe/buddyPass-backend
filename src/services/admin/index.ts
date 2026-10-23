@@ -5,8 +5,9 @@ import {
   UpdateProfileRequest,
   UserResponse,
 } from "../../types/users";
-import { ISubscriptionRepository } from "../../types/subscriptions";
+import { ICapacityForecastService, OpenCapacityAlertSummary } from "../../types/capacity";
 import { IServiceProviderRepository } from "../../types/serviceProviders";
+import { ISubscriptionRepository } from "../../types/subscriptions";
 import {
   NotFoundError,
   ValidationError,
@@ -28,7 +29,8 @@ export class AdminService {
     private userRepository: IUserRepository,
     private userService: IUserService,
     private subscriptionRepository: ISubscriptionRepository,
-    private serviceProviderRepository: IServiceProviderRepository
+    private serviceProviderRepository: IServiceProviderRepository,
+    private capacityForecast: ICapacityForecastService
   ) {}
 
   async createAdmin(data: {
@@ -45,18 +47,25 @@ export class AdminService {
       totalSubscriptions: number;
       totalServiceProviders: number;
     };
+    openCapacityAlerts: OpenCapacityAlertSummary;
     lastUpdated: string;
   }> {
-    const [totalUsers, totalSubscriptions, totalServiceProviders] =
+    const [totalUsers, totalSubscriptions, totalServiceProviders, openCapacityAlerts] =
       await Promise.all([
         this.userRepository.count(),
         this.subscriptionRepository.count(),
         this.serviceProviderRepository.count(),
+        this.capacityForecast.getOpenAlertSummary(),
       ]);
     return {
       statistics: { totalUsers, totalSubscriptions, totalServiceProviders },
+      openCapacityAlerts,
       lastUpdated: new Date().toISOString(),
     };
+  }
+
+  async listCapacityAlerts(): Promise<OpenCapacityAlertSummary["alerts"]> {
+    return this.capacityForecast.listOpenAlerts();
   }
 
   async listUsers(query: AdminListQuery): Promise<{
@@ -197,12 +206,14 @@ export function createAdminService(
   userRepository: IUserRepository,
   userService: IUserService,
   subscriptionRepository: ISubscriptionRepository,
-  serviceProviderRepository: IServiceProviderRepository
+  serviceProviderRepository: IServiceProviderRepository,
+  capacityForecast: ICapacityForecastService
 ): AdminService {
   return new AdminService(
     userRepository,
     userService,
     subscriptionRepository,
-    serviceProviderRepository
+    serviceProviderRepository,
+    capacityForecast
   );
 }

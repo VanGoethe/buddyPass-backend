@@ -24,6 +24,19 @@ export class AdminController {
     }
   };
 
+  listCapacityAlerts = async (
+    _req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const alerts = await this.adminService.listCapacityAlerts();
+      sendSuccess(res, { alerts });
+    } catch (error) {
+      next(error);
+    }
+  };
+
   listUsers = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const query = req.query as unknown as {

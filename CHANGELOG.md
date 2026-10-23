@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Capacity alerts warn admins when the last allocatable account in a provider-and-country pool starts filling, or when pending requests already exceed free seats. Pace, historical fill time, and ETA are included so a fast pool can be restocked before a slow one. `GET /api/admin/capacity-alerts` lists open alerts, and `GET /api/admin/dashboard` includes the open count plus the newest ten. Streaming account signup stays manual.
+- Product notes for the Burundi reseller: `ROADMAP.md` (offer, two renewal clocks, WhatsApp as V1.5, automatic renewal as an undecided idea), `USER_JOURNEY.md`, and `ADMIN_INVENTORY.md` (what the admin API has, what is partial, and what is missing).
+
 ## [2.0.0] - 2026-10-21
 
 Breaking release. Response bodies, shared credentials, and subscription capacity all change.

@@ -48,14 +48,94 @@ router.post("/users", validate(createAdminSchema), adminController.createUser);
  * /admin/dashboard:
  *   get:
  *     summary: Platform statistics
+ *     description: |
+ *       User, subscription, and service-provider counts, plus open capacity alerts.
+ *       The alert list is the newest ten. `openCapacityAlerts.count` is the full open total.
  *     tags: [Admin]
  *     security:
  *       - BearerAuth: []
  *     responses:
  *       200:
  *         description: Dashboard statistics
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SuccessResponse'
+ *             example:
+ *               success: true
+ *               data:
+ *                 statistics:
+ *                   totalUsers: 12
+ *                   totalSubscriptions: 4
+ *                   totalServiceProviders: 2
+ *                 openCapacityAlerts:
+ *                   count: 1
+ *                   alerts:
+ *                     - id: clalert1
+ *                       serviceProviderId: clprovider1
+ *                       serviceProviderName: Netflix
+ *                       countryId: null
+ *                       countryName: null
+ *                       packingSubscriptionId: clsub1
+ *                       headroom: 4
+ *                       pendingCount: 0
+ *                       recentRatePerHour: null
+ *                       historicalFillMs: null
+ *                       etaMs: null
+ *                       horizonMs: null
+ *                       openedAt: "2026-10-21T18:00:00.000Z"
+ *                       updatedAt: "2026-10-21T18:00:00.000Z"
+ *                 lastUpdated: "2026-10-21T18:05:00.000Z"
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       403:
+ *         $ref: '#/components/responses/ForbiddenError'
  */
 router.get("/dashboard", adminController.getDashboard);
+
+/**
+ * @swagger
+ * /admin/capacity-alerts:
+ *   get:
+ *     summary: Open capacity alerts
+ *     description: |
+ *       Alerts for provider-and-country pools whose last allocatable account has started filling,
+ *       or whose free seats no longer cover pending requests. Newest open alert first.
+ *       `etaMs` and `horizonMs` are milliseconds. `recentRatePerHour` is omitted until two recent assignments exist.
+ *     tags: [Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Open capacity alerts
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/CapacityAlertListResponse'
+ *             example:
+ *               success: true
+ *               data:
+ *                 alerts:
+ *                   - id: clalert1
+ *                     serviceProviderId: clprovider1
+ *                     serviceProviderName: Netflix
+ *                     countryId: clcountry1
+ *                     countryName: United States
+ *                     packingSubscriptionId: clsub1
+ *                     headroom: 4
+ *                     pendingCount: 0
+ *                     recentRatePerHour: 0.104
+ *                     historicalFillMs: 172800000
+ *                     etaMs: 138240000
+ *                     horizonMs: 172800000
+ *                     openedAt: "2026-10-21T18:00:00.000Z"
+ *                     updatedAt: "2026-10-21T18:00:00.000Z"
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       403:
+ *         $ref: '#/components/responses/ForbiddenError'
+ */
+router.get("/capacity-alerts", adminController.listCapacityAlerts);
 
 /**
  * @swagger

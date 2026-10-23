@@ -1,4 +1,5 @@
 import { Prisma, PrismaClient } from "@prisma/client";
+import { ICapacityForecastService } from "../../types/capacity";
 import {
   ISlotAssignmentService,
   ISubscriptionSlot,
@@ -18,7 +19,10 @@ function isRetryable(error: unknown): boolean {
 }
 
 export class SlotAssignmentService implements ISlotAssignmentService {
-  constructor(private prisma: PrismaClient) {}
+  constructor(
+    private prisma: PrismaClient,
+    private capacityForecast?: ICapacityForecastService
+  ) {}
 
   async assignSlotToUser(
     userId: string,
@@ -91,6 +95,7 @@ export class SlotAssignmentService implements ISlotAssignmentService {
       });
       assigned += 1;
     }
+    await this.refreshCapacity(serviceProviderId);
     return assigned;
   }
 
@@ -206,5 +211,19 @@ export class SlotAssignmentService implements ISlotAssignmentService {
       },
       message: "Slot successfully assigned",
     };
+  }
+
+  private async refreshCapacity(serviceProviderId: string): Promise<void> {
+    if (!this.capacityForecast) {
+      return;
+    }
+    try {
+      await this.capacityForecast.recomputeProvider(serviceProviderId);
+    } catch (error) {
+      logger.error(
+        { err: error, serviceProviderId },
+        "Capacity forecast recompute failed"
+      );
+    }
   }
 }

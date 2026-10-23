@@ -7,3 +7,4 @@ export * from "./users";
 export * from "./countries";
 export * from "./serviceProviders";
 export * from "./subscriptions";
+export * from "./capacity";

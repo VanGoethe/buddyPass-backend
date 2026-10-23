@@ -16,6 +16,7 @@ import {
   SubscriptionSlotResponse,
   UpdateSubscriptionData,
 } from "../../types/subscriptions";
+import { ICapacityForecastService } from "../../types/capacity";
 import { ICountryRepository } from "../../types/countries";
 import { IServiceProviderRepository } from "../../types/serviceProviders";
 import { Subscription, SubscriptionRequest, SubscriptionSlot } from "../../models/subscriptions";
@@ -35,7 +36,8 @@ export class SubscriptionService implements ISubscriptionService {
     private subscriptionRequestRepository: ISubscriptionRequestRepository,
     private serviceProviderRepository: IServiceProviderRepository,
     private countryRepository: ICountryRepository,
-    private slotAssignmentService: ISlotAssignmentService
+    private slotAssignmentService: ISlotAssignmentService,
+    private capacityForecast?: ICapacityForecastService
   ) {}
 
   async createSubscription(
@@ -59,6 +61,7 @@ export class SubscriptionService implements ISubscriptionService {
       subscription.serviceProviderId,
       subscription.countryId
     );
+    await this.refreshCapacity(subscription.serviceProviderId);
     const refreshed = await this.subscriptionRepository.findById(subscription.id);
     return new Subscription(refreshed ?? subscription).toResponse();
   }
@@ -132,6 +135,15 @@ export class SubscriptionService implements ISubscriptionService {
         updated.countryId
       );
     }
+    const capacityChanged =
+      data.maxSlots !== undefined ||
+      data.isActive !== undefined ||
+      data.expiresAt !== undefined ||
+      data.countryId !== undefined ||
+      data.password !== undefined;
+    if (capacityChanged) {
+      await this.refreshCapacity(updated.serviceProviderId);
+    }
     const refreshed = await this.subscriptionRepository.findById(id);
     return new Subscription(refreshed ?? updated).toResponse();
   }
@@ -141,7 +153,9 @@ export class SubscriptionService implements ISubscriptionService {
     if (!subscription) {
       throw new NotFoundError("Subscription not found");
     }
+    const serviceProviderId = subscription.serviceProviderId;
     await this.subscriptionRepository.delete(id);
+    await this.refreshCapacity(serviceProviderId);
   }
 
   async getSubscriptionsByServiceProvider(
@@ -208,6 +222,7 @@ export class SubscriptionService implements ISubscriptionService {
       assignedSlotId: assignment.slotAssignment?.id,
       processedAt: assignment.slotAssignment ? new Date() : undefined,
     });
+    await this.refreshCapacity(data.serviceProviderId);
     return new SubscriptionRequest(request).toResponse();
   }
 
@@ -266,6 +281,7 @@ export class SubscriptionService implements ISubscriptionService {
         slot.subscription.serviceProviderId,
         slot.subscription.countryId
       );
+      await this.refreshCapacity(slot.subscription.serviceProviderId);
     }
   }
 
@@ -310,6 +326,20 @@ export class SubscriptionService implements ISubscriptionService {
       );
     }
   }
+
+  private async refreshCapacity(serviceProviderId: string): Promise<void> {
+    if (!this.capacityForecast) {
+      return;
+    }
+    try {
+      await this.capacityForecast.recomputeProvider(serviceProviderId);
+    } catch (error) {
+      logger.error(
+        { err: error, serviceProviderId },
+        "Capacity forecast recompute failed"
+      );
+    }
+  }
 }
 
 export { SlotAssignmentService } from "./slotAssignmentService";
@@ -320,7 +350,8 @@ export function createSubscriptionService(
   subscriptionRequestRepository: ISubscriptionRequestRepository,
   serviceProviderRepository: IServiceProviderRepository,
   countryRepository: ICountryRepository,
-  slotAssignmentService: ISlotAssignmentService
+  slotAssignmentService: ISlotAssignmentService,
+  capacityForecast?: ICapacityForecastService
 ): ISubscriptionService {
   return new SubscriptionService(
     subscriptionRepository,
@@ -328,6 +359,7 @@ export function createSubscriptionService(
     subscriptionRequestRepository,
     serviceProviderRepository,
     countryRepository,
-    slotAssignmentService
+    slotAssignmentService,
+    capacityForecast
   );
 }

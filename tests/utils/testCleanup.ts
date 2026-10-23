@@ -10,6 +10,7 @@ export class TestDataCleanup {
   private createdSubscriptions: string[] = [];
   private createdSubscriptionSlots: string[] = [];
   private createdSubscriptionRequests: string[] = [];
+  private createdCapacityAlerts: string[] = [];
 
   // Track created entities
   trackUser(id: string) {
@@ -40,6 +41,10 @@ export class TestDataCleanup {
     this.createdSubscriptionRequests.push(id);
   }
 
+  trackCapacityAlert(id: string) {
+    this.createdCapacityAlerts.push(id);
+  }
+
   // Clean up methods
   async cleanupUsers() {
     if (this.createdUsers.length > 0) {
@@ -51,6 +56,28 @@ export class TestDataCleanup {
       });
       this.createdUsers = [];
     }
+  }
+
+  async cleanupCapacityAlerts() {
+    if (
+      this.createdCapacityAlerts.length === 0 &&
+      this.createdServiceProviders.length === 0
+    ) {
+      return;
+    }
+    await prisma.capacityAlert.deleteMany({
+      where: {
+        OR: [
+          ...(this.createdCapacityAlerts.length > 0
+            ? [{ id: { in: this.createdCapacityAlerts } }]
+            : []),
+          ...(this.createdServiceProviders.length > 0
+            ? [{ serviceProviderId: { in: this.createdServiceProviders } }]
+            : []),
+        ],
+      },
+    });
+    this.createdCapacityAlerts = [];
   }
 
   async cleanupSubscriptions() {
@@ -117,6 +144,7 @@ export class TestDataCleanup {
 
   // Clean up everything
   async cleanupAll() {
+    await this.cleanupCapacityAlerts();
     await this.cleanupSubscriptions(); // This will also cleanup slots and requests
     await this.cleanupServiceProviders();
     await this.cleanupCountries();

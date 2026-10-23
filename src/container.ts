@@ -55,6 +55,8 @@ import { ICurrencyRepository, ICurrencyService } from "./types/currencies";
 import { CurrencyController } from "./controllers/currencies";
 import { AdminController } from "./controllers/admin";
 import { AdminService, createAdminService } from "./services/admin";
+import { CapacityForecastService } from "./services/capacity";
+import { ICapacityForecastService } from "./types/capacity";
 
 export class Container {
   private static instance: Container;
@@ -89,6 +91,7 @@ export class Container {
   private currencyController: CurrencyController;
   private adminService: AdminService;
   private adminController: AdminController;
+  private capacityForecastService: ICapacityForecastService;
 
   private constructor() {
     // Initialize Prisma client
@@ -129,8 +132,13 @@ export class Container {
     this.subscriptionRequestRepository =
       new PrismaSubscriptionRequestRepository(this.prisma);
 
+    this.capacityForecastService = new CapacityForecastService(this.prisma);
+
     // Initialize slot assignment service
-    this.slotAssignmentService = new SlotAssignmentService(this.prisma);
+    this.slotAssignmentService = new SlotAssignmentService(
+      this.prisma,
+      this.capacityForecastService
+    );
 
     // Initialize Subscription service with all dependencies
     this.subscriptionService = new SubscriptionService(
@@ -139,7 +147,8 @@ export class Container {
       this.subscriptionRequestRepository,
       this.serviceProviderRepository,
       this.countryRepository,
-      this.slotAssignmentService
+      this.slotAssignmentService,
+      this.capacityForecastService
     );
 
     this.subscriptionController = createSubscriptionController(
@@ -150,7 +159,8 @@ export class Container {
       this.userRepository,
       this.userService,
       this.subscriptionRepository,
-      this.serviceProviderRepository
+      this.serviceProviderRepository,
+      this.capacityForecastService
     );
     this.adminController = new AdminController(this.adminService);
   }
@@ -243,6 +253,10 @@ export class Container {
     return this.adminController;
   }
 
+  public getCapacityForecastService(): ICapacityForecastService {
+    return this.capacityForecastService;
+  }
+
   // General getters
   public getPrisma(): PrismaClient {
     return this.prisma;
@@ -291,6 +305,8 @@ export class Container {
         return this.currencyService as T;
       case "currencyController":
         return this.currencyController as T;
+      case "capacityForecastService":
+        return this.capacityForecastService as T;
       case "prisma":
         return this.prisma as T;
       default:

@@ -88,6 +88,7 @@ model Country {
   serviceProviders     ServiceProviderCountry[]
   subscriptions        Subscription[]
   subscriptionRequests SubscriptionRequest[]
+  capacityAlerts       CapacityAlert[]
 
   @@index([currencyId])
   @@map("countries")
@@ -104,6 +105,7 @@ model ServiceProvider {
   subscriptions        Subscription[]
   supportedCountries   ServiceProviderCountry[]
   subscriptionRequests SubscriptionRequest[]
+  capacityAlerts       CapacityAlert[]
 
   @@map("service_providers")
 }
@@ -147,6 +149,7 @@ model Subscription {
   country           Country?           @relation(fields: [countryId], references: [id], onDelete: SetNull)
   currency          Currency?          @relation(fields: [currencyId], references: [id], onDelete: SetNull)
   subscriptionSlots SubscriptionSlot[]
+  capacityAlerts    CapacityAlert[]
 
   @@index([serviceProviderId, countryId, isActive])
   @@index([currencyId])
@@ -201,4 +204,37 @@ model SubscriptionRequest {
   @@index([userId, status])
   @@index([serviceProviderId, countryId, status])
   @@map("subscription_requests")
+}
+
+enum CapacityAlertStatus {
+  OPEN
+  RESOLVED
+}
+
+model CapacityAlert {
+  id                    String              @id @default(cuid())
+  serviceProviderId     String
+  countryId             String?
+  poolKey               String
+  openPoolKey           String?             @unique
+  status                CapacityAlertStatus @default(OPEN)
+  headroom              Int
+  pendingCount          Int
+  packingSubscriptionId String?
+  recentRatePerHour     Float?
+  historicalFillMs      BigInt?
+  etaMs                 BigInt?
+  horizonMs             BigInt?
+  openedAt              DateTime            @default(now())
+  resolvedAt            DateTime?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  serviceProvider     ServiceProvider @relation(fields: [serviceProviderId], references: [id], onDelete: Cascade)
+  country             Country?        @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  packingSubscription Subscription?   @relation(fields: [packingSubscriptionId], references: [id], onDelete: SetNull)
+
+  @@index([status, openedAt])
+  @@index([serviceProviderId])
+  @@map("capacity_alerts")
 }

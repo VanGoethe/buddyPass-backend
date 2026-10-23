@@ -325,13 +325,48 @@ const serviceProviderListResponse = z
   })
   .openapi("ServiceProviderListResponse");
 
+const capacityAlert = z
+  .object({
+    id: z.string(),
+    serviceProviderId: z.string(),
+    serviceProviderName: z.string(),
+    countryId: z.string().nullable(),
+    countryName: z.string().nullable(),
+    packingSubscriptionId: z.string().nullable(),
+    headroom: z.number().int(),
+    pendingCount: z.number().int(),
+    recentRatePerHour: z.number().nullable(),
+    historicalFillMs: z.number().int().nullable(),
+    etaMs: z.number().int().nullable(),
+    horizonMs: z.number().int().nullable(),
+    openedAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  })
+  .openapi("CapacityAlert");
+
 const adminDashboard = z
   .object({
-    users: z.number().int(),
-    subscriptions: z.number().int(),
-    serviceProviders: z.number().int(),
+    statistics: z.object({
+      totalUsers: z.number().int(),
+      totalSubscriptions: z.number().int(),
+      totalServiceProviders: z.number().int(),
+    }),
+    openCapacityAlerts: z.object({
+      count: z.number().int(),
+      alerts: z.array(capacityAlert),
+    }),
+    lastUpdated: z.string().datetime(),
   })
   .openapi("AdminDashboard");
+
+const capacityAlertListResponse = z
+  .object({
+    success: z.literal(true),
+    data: z.object({
+      alerts: z.array(capacityAlert),
+    }),
+  })
+  .openapi("CapacityAlertListResponse");
 
 const credentialReveal = z
   .object({
@@ -388,6 +423,8 @@ registry.register("CurrencyListResponse", currencyListResponse);
 registry.register("CreateCurrencyRequest", createCurrencyRequest);
 registry.register("UpdateCurrencyRequest", updateCurrencyRequest);
 registry.register("AdminDashboard", adminDashboard);
+registry.register("CapacityAlert", capacityAlert);
+registry.register("CapacityAlertListResponse", capacityAlertListResponse);
 registry.register("CredentialReveal", credentialReveal);
 
 export function buildOpenApiSchemas(): Record<string, object> {
