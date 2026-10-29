@@ -33,6 +33,7 @@ export class PrismaSubscriptionRepository implements ISubscriptionRepository {
         expiresAt: data.expiresAt,
         renewalInfo: toInputJson(data.renewalInfo),
         userPrice: data.userPrice,
+        accountCost: data.accountCost,
         currencyId: data.currencyId,
         metadata: toInputJson(data.metadata),
         isActive: data.isActive ?? true,
@@ -109,6 +110,7 @@ export class PrismaSubscriptionRepository implements ISubscriptionRepository {
         expiresAt: data.expiresAt,
         renewalInfo: toInputJson(data.renewalInfo),
         userPrice: data.userPrice,
+        accountCost: data.accountCost,
         currencyId: data.currencyId,
         metadata: toInputJson(data.metadata),
         isActive: data.isActive,
@@ -145,5 +147,92 @@ export class PrismaSubscriptionRepository implements ISubscriptionRepository {
 
   async countByServiceProviderId(serviceProviderId: string): Promise<number> {
     return this.prisma.subscription.count({ where: { serviceProviderId } });
+  }
+
+  async inventoryByService() {
+    const rows = await this.prisma.subscription.findMany({
+      include: {
+        serviceProvider: { select: { id: true, name: true } },
+        _count: {
+          select: {
+            subscriptionSlots: { where: { isActive: true, releasedAt: null } },
+          },
+        },
+      },
+    });
+    const grouped = new Map<
+      string,
+      { serviceProviderId: string; serviceProviderName: string; total: number; taken: number }
+    >();
+    for (const row of rows) {
+      const current = grouped.get(row.serviceProviderId) ?? {
+        serviceProviderId: row.serviceProviderId,
+        serviceProviderName: row.serviceProvider.name,
+        total: 0,
+        taken: 0,
+      };
+      current.total += row.maxSlots;
+      current.taken += row._count.subscriptionSlots;
+      grouped.set(row.serviceProviderId, current);
+    }
+    return [...grouped.values()].map((row) => ({
+      ...row,
+      free: Math.max(row.total - row.taken, 0),
+    }));
+  }
+
+  async listExpiringAccounts(withinDays: number) {
+    const now = new Date();
+    const until = new Date(now.getTime() + withinDays * 24 * 60 * 60 * 1000);
+    const rows = await this.prisma.subscription.findMany({
+      where: { isActive: true, expiresAt: { gt: now, lte: until } },
+      include: { serviceProvider: { select: { name: true } } },
+      orderBy: { expiresAt: "asc" },
+    });
+    return rows.flatMap((row) =>
+      row.expiresAt
+        ? [
+            {
+              id: row.id,
+              name: row.name,
+              serviceProviderName: row.serviceProvider.name,
+              expiresAt: row.expiresAt.toISOString(),
+            },
+          ]
+        : []
+    );
+  }
+
+  async listOfferAccounts() {
+    const now = new Date();
+    const rows = await this.prisma.subscription.findMany({
+      where: { isActive: true, userPrice: { not: null } },
+      include: {
+        serviceProvider: { select: { name: true, iconUrl: true, description: true } },
+        country: { select: { name: true } },
+        currency: { select: { code: true } },
+        _count: {
+          select: {
+            subscriptionSlots: { where: { isActive: true, releasedAt: null } },
+          },
+        },
+      },
+    });
+    return rows.map((row) => ({
+      serviceProviderId: row.serviceProviderId,
+      serviceProviderName: row.serviceProvider.name,
+      iconUrl: row.serviceProvider.iconUrl,
+      description: row.serviceProvider.description,
+      countryId: row.countryId,
+      countryName: row.country?.name ?? null,
+      currencyCode: row.currency?.code ?? null,
+      userPrice: row.userPrice,
+      maxSlots: row.maxSlots,
+      occupied: row._count.subscriptionSlots,
+      allocatable:
+        row.isActive &&
+        !row.needsCredentialReset &&
+        (row.expiresAt === null || row.expiresAt > now),
+    }));
   }
 }

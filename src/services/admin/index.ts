@@ -5,9 +5,22 @@ import {
   UpdateProfileRequest,
   UserResponse,
 } from "../../types/users";
-import { ICapacityForecastService, OpenCapacityAlertSummary } from "../../types/capacity";
+import {
+  CapacityAlertView,
+  ICapacityForecastService,
+  OpenCapacityAlertSummary,
+} from "../../types/capacity";
 import { IServiceProviderRepository } from "../../types/serviceProviders";
-import { ISubscriptionRepository } from "../../types/subscriptions";
+import {
+  CreateSubscriptionData,
+  ISubscriptionRepository,
+  ISubscriptionRequestRepository,
+  ISubscriptionService,
+  ISubscriptionSlotRepository,
+  PendingRequestRow,
+} from "../../types/subscriptions";
+import { IRevealStore } from "../../repositories/reveals";
+import { SubscriptionRequest, SubscriptionSlot } from "../../models/subscriptions";
 import {
   NotFoundError,
   ValidationError,
@@ -30,7 +43,11 @@ export class AdminService {
     private userService: IUserService,
     private subscriptionRepository: ISubscriptionRepository,
     private serviceProviderRepository: IServiceProviderRepository,
-    private capacityForecast: ICapacityForecastService
+    private capacityForecast: ICapacityForecastService,
+    private subscriptionSlotRepository: ISubscriptionSlotRepository,
+    private subscriptionRequestRepository: ISubscriptionRequestRepository,
+    private subscriptionService: ISubscriptionService,
+    private revealStore: IRevealStore
   ) {}
 
   async createAdmin(data: {
@@ -47,25 +64,50 @@ export class AdminService {
       totalSubscriptions: number;
       totalServiceProviders: number;
     };
+    inventory: Awaited<ReturnType<ISubscriptionRepository["inventoryByService"]>>;
+    waitingCount: number;
+    expiringAccounts: Awaited<ReturnType<ISubscriptionRepository["listExpiringAccounts"]>>;
     openCapacityAlerts: OpenCapacityAlertSummary;
     lastUpdated: string;
   }> {
-    const [totalUsers, totalSubscriptions, totalServiceProviders, openCapacityAlerts] =
-      await Promise.all([
-        this.userRepository.count(),
-        this.subscriptionRepository.count(),
-        this.serviceProviderRepository.count(),
-        this.capacityForecast.getOpenAlertSummary(),
-      ]);
+    const [
+      totalUsers,
+      totalSubscriptions,
+      totalServiceProviders,
+      openCapacityAlerts,
+      inventory,
+      waitingCount,
+      expiringAccounts,
+      pending,
+    ] = await Promise.all([
+      this.userRepository.count(),
+      this.subscriptionRepository.count(),
+      this.serviceProviderRepository.count(),
+      this.capacityForecast.getOpenAlertSummary(),
+      this.subscriptionRepository.inventoryByService(),
+      this.subscriptionRequestRepository.countPending(),
+      this.subscriptionRepository.listExpiringAccounts(7),
+      this.subscriptionRequestRepository.listPendingDetailed(),
+    ]);
     return {
       statistics: { totalUsers, totalSubscriptions, totalServiceProviders },
-      openCapacityAlerts,
+      inventory,
+      waitingCount,
+      expiringAccounts,
+      openCapacityAlerts: {
+        ...openCapacityAlerts,
+        alerts: this.withWaiters(openCapacityAlerts.alerts, pending),
+      },
       lastUpdated: new Date().toISOString(),
     };
   }
 
   async listCapacityAlerts(): Promise<OpenCapacityAlertSummary["alerts"]> {
-    return this.capacityForecast.listOpenAlerts();
+    const [alerts, pending] = await Promise.all([
+      this.capacityForecast.listOpenAlerts(),
+      this.subscriptionRequestRepository.listPendingDetailed(),
+    ]);
+    return this.withWaiters(alerts, pending);
   }
 
   async listUsers(query: AdminListQuery): Promise<{
@@ -97,9 +139,75 @@ export class AdminService {
     };
   }
 
-  async getUser(userId: string): Promise<AdminUserView> {
+  async getUser(userId: string) {
     const user = await this.requireUser(userId);
-    return this.toAdminView(user);
+    const [seats, requests] = await Promise.all([
+      this.subscriptionSlotRepository.findByUserId(userId),
+      this.subscriptionRequestRepository.findByUserId(userId),
+    ]);
+    return {
+      ...this.toAdminView(user),
+      seats: seats.map((seat) =>
+        seat instanceof SubscriptionSlot ? seat.toResponse() : seat
+      ),
+      pendingRequests: requests
+        .filter((request) => request.status === "PENDING")
+        .map((request) =>
+          request instanceof SubscriptionRequest ? request.toResponse() : request
+        ),
+    };
+  }
+
+  async setVerified(userId: string, isVerified: boolean): Promise<AdminUserView> {
+    await this.requireUser(userId);
+    await this.userRepository.updateProfile(userId, { isVerified });
+    const updated = await this.requireUser(userId);
+    return this.toAdminView(updated);
+  }
+
+  async listWaitingLine() {
+    const rows = await this.subscriptionRequestRepository.listPendingDetailed();
+    const places = new Map<string, number>();
+    return rows.map((row) => {
+      const key = `${row.serviceProviderId}:${row.countryId ?? ""}`;
+      const place = (places.get(key) ?? 0) + 1;
+      places.set(key, place);
+      return {
+        id: row.id,
+        userId: row.userId,
+        userName: row.userName,
+        serviceProviderId: row.serviceProviderId,
+        serviceProviderName: row.serviceProviderName,
+        countryId: row.countryId,
+        countryName: row.countryName,
+        place,
+        requestedAt: row.requestedAt.toISOString(),
+      };
+    });
+  }
+
+  async createAccountFromAlert(
+    alertId: string,
+    data: Omit<CreateSubscriptionData, "serviceProviderId" | "countryId">
+  ) {
+    const alerts = await this.capacityForecast.listOpenAlerts();
+    const alert = alerts.find((item) => item.id === alertId);
+    if (!alert) {
+      throw new NotFoundError("Capacity alert not found");
+    }
+    return this.subscriptionService.createSubscription({
+      ...data,
+      serviceProviderId: alert.serviceProviderId,
+      countryId: alert.countryId ?? undefined,
+    });
+  }
+
+  async listReveals(subscriptionId: string) {
+    const subscription = await this.subscriptionRepository.findById(subscriptionId);
+    if (!subscription) {
+      throw new NotFoundError("Subscription not found");
+    }
+    return this.revealStore.listBySubscription(subscriptionId);
   }
 
   async updateStatus(
@@ -165,6 +273,31 @@ export class AdminService {
     await this.userRepository.delete(userId);
   }
 
+  private withWaiters(
+    alerts: CapacityAlertView[],
+    pending: PendingRequestRow[]
+  ): CapacityAlertView[] {
+    return alerts.map((alert) => {
+      const waiting = pending
+        .filter(
+          (row) =>
+            row.serviceProviderId === alert.serviceProviderId &&
+            (row.countryId ?? null) === (alert.countryId ?? null)
+        )
+        .map((row, index) => ({
+          userId: row.userId,
+          name: row.userName,
+          requestedAt: row.requestedAt.toISOString(),
+          place: index + 1,
+        }));
+      return {
+        ...alert,
+        waiting,
+        freeSeats: alert.headroom + alert.pendingCount,
+      };
+    });
+  }
+
   private async requireUser(userId: string) {
     const user = await this.userRepository.findById(userId);
     if (!user) {
@@ -207,13 +340,21 @@ export function createAdminService(
   userService: IUserService,
   subscriptionRepository: ISubscriptionRepository,
   serviceProviderRepository: IServiceProviderRepository,
-  capacityForecast: ICapacityForecastService
+  capacityForecast: ICapacityForecastService,
+  subscriptionSlotRepository: ISubscriptionSlotRepository,
+  subscriptionRequestRepository: ISubscriptionRequestRepository,
+  subscriptionService: ISubscriptionService,
+  revealStore: IRevealStore
 ): AdminService {
   return new AdminService(
     userRepository,
     userService,
     subscriptionRepository,
     serviceProviderRepository,
-    capacityForecast
+    capacityForecast,
+    subscriptionSlotRepository,
+    subscriptionRequestRepository,
+    subscriptionService,
+    revealStore
   );
 }

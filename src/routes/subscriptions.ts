@@ -15,6 +15,8 @@ import {
   createSubscriptionSchema,
   idParamSchema,
   listSubscriptionsSchema,
+  incidentNoteSchema,
+  paymentMethodSchema,
   slotIdSchema,
   slotRequestSchema,
   updateSubscriptionSchema,
@@ -22,6 +24,7 @@ import {
 
 const router = Router();
 const subscriptionController = container.getSubscriptionController();
+const paymentController = container.getPaymentController();
 
 /**
  * @swagger
@@ -194,6 +197,68 @@ router.delete(
   authenticateJWT,
   validate(slotIdSchema),
   subscriptionController.releaseSlot
+);
+
+/**
+ * @swagger
+ * /subscriptions/slots/{slotId}/payments:
+ *   post:
+ *     summary: Start a seat payment
+ *     description: Amount and currency come from the account. A pending payment is returned if one already exists.
+ *     tags: [Payments]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       201:
+ *         description: Payment recorded
+ *       409:
+ *         description: The account has no seat price
+ */
+router.post(
+  "/slots/:slotId/payments",
+  authenticateJWT,
+  validate(paymentMethodSchema),
+  paymentController.create
+);
+
+/**
+ * @swagger
+ * /subscriptions/slots/{slotId}/login-code:
+ *   get:
+ *     summary: Latest login code for a paid seat
+ *     description: Codes older than 15 minutes are omitted. The response is not cached.
+ *     tags: [Subscriptions]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Latest code, or null
+ */
+router.get(
+  "/slots/:slotId/login-code",
+  authenticateJWT,
+  credentialRevealRateLimiter,
+  validate(slotIdSchema),
+  subscriptionController.getLoginCode
+);
+
+/**
+ * @swagger
+ * /subscriptions/slots/{slotId}/incidents:
+ *   post:
+ *     summary: Report a dead login
+ *     tags: [Subscriptions]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       201:
+ *         description: Incident reported
+ */
+router.post(
+  "/slots/:slotId/incidents",
+  authenticateJWT,
+  validate(incidentNoteSchema),
+  subscriptionController.reportIncident
 );
 
 /**

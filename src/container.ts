@@ -57,6 +57,21 @@ import { AdminController } from "./controllers/admin";
 import { AdminService, createAdminService } from "./services/admin";
 import { CapacityForecastService } from "./services/capacity";
 import { ICapacityForecastService } from "./types/capacity";
+import { SmtpMailer } from "./services/mail/smtpMailer";
+import { NotificationService } from "./services/notifications";
+import { HttpIhellaClient } from "./services/payments/ihellaClient";
+import { PaymentService } from "./services/payments";
+import { PaymentController } from "./controllers/payments";
+import { PrismaRevealStore } from "./repositories/reveals";
+import { ImapInboxClient } from "./services/inbox/imapInboxClient";
+import { InboxService } from "./services/inbox";
+import { IncidentService } from "./services/incidents";
+import {
+  IncidentController,
+  LoginCodeController,
+  NotificationController,
+} from "./controllers/notifications";
+import { env } from "./config/env";
 
 export class Container {
   private static instance: Container;
@@ -92,6 +107,14 @@ export class Container {
   private adminService: AdminService;
   private adminController: AdminController;
   private capacityForecastService: ICapacityForecastService;
+  private notificationService: NotificationService;
+  private paymentService: PaymentService;
+  private paymentController: PaymentController;
+  private inboxService: InboxService;
+  private incidentService: IncidentService;
+  private notificationController: NotificationController;
+  private incidentController: IncidentController;
+  private loginCodeController: LoginCodeController;
 
   private constructor() {
     // Initialize Prisma client
@@ -134,10 +157,35 @@ export class Container {
 
     this.capacityForecastService = new CapacityForecastService(this.prisma);
 
+    this.notificationService = new NotificationService(
+      this.prisma,
+      new SmtpMailer()
+    );
+    const ihella =
+      env.IHELLA_API_BASE_URL && env.IHELLA_API_KEY
+        ? new HttpIhellaClient(env.IHELLA_API_BASE_URL, env.IHELLA_API_KEY)
+        : null;
+    this.paymentService = new PaymentService(
+      this.prisma,
+      this.notificationService,
+      ihella
+    );
+    this.paymentController = new PaymentController(this.paymentService);
+    const revealStore = new PrismaRevealStore(this.prisma);
+    this.inboxService = new InboxService(
+      this.prisma,
+      new ImapInboxClient()
+    );
+    this.incidentService = new IncidentService(this.prisma);
+    this.notificationController = new NotificationController(this.notificationService);
+    this.incidentController = new IncidentController(this.incidentService);
+    this.loginCodeController = new LoginCodeController(this.inboxService);
+
     // Initialize slot assignment service
     this.slotAssignmentService = new SlotAssignmentService(
       this.prisma,
-      this.capacityForecastService
+      this.capacityForecastService,
+      this.notificationService
     );
 
     // Initialize Subscription service with all dependencies
@@ -148,7 +196,12 @@ export class Container {
       this.serviceProviderRepository,
       this.countryRepository,
       this.slotAssignmentService,
-      this.capacityForecastService
+      this.capacityForecastService,
+      this.paymentService,
+      revealStore,
+      this.inboxService,
+      this.incidentService,
+      this.notificationService
     );
 
     this.subscriptionController = createSubscriptionController(
@@ -160,7 +213,11 @@ export class Container {
       this.userService,
       this.subscriptionRepository,
       this.serviceProviderRepository,
-      this.capacityForecastService
+      this.capacityForecastService,
+      this.subscriptionSlotRepository,
+      this.subscriptionRequestRepository,
+      this.subscriptionService,
+      revealStore
     );
     this.adminController = new AdminController(this.adminService);
   }
@@ -255,6 +312,26 @@ export class Container {
 
   public getCapacityForecastService(): ICapacityForecastService {
     return this.capacityForecastService;
+  }
+
+  public getPaymentController(): PaymentController {
+    return this.paymentController;
+  }
+
+  public getNotificationController(): NotificationController {
+    return this.notificationController;
+  }
+
+  public getIncidentController(): IncidentController {
+    return this.incidentController;
+  }
+
+  public getLoginCodeController(): LoginCodeController {
+    return this.loginCodeController;
+  }
+
+  public getInboxService(): InboxService {
+    return this.inboxService;
   }
 
   // General getters

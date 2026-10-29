@@ -28,6 +28,7 @@ export class ServiceProvider implements IServiceProvider {
   public readonly id: string;
   public readonly name: string;
   public readonly description?: string | null;
+  public readonly iconUrl?: string | null;
   public readonly metadata?: Prisma.JsonValue | null;
   public readonly createdAt: Date;
   public readonly updatedAt: Date;
@@ -37,6 +38,7 @@ export class ServiceProvider implements IServiceProvider {
     this.id = data.id;
     this.name = data.name;
     this.description = data.description;
+    this.iconUrl = data.iconUrl;
     this.metadata = data.metadata;
     this.createdAt = data.createdAt;
     this.updatedAt = data.updatedAt;
@@ -107,6 +109,7 @@ export class ServiceProvider implements IServiceProvider {
       id: this.id,
       name: this.name,
       description: this.description,
+      iconUrl: this.iconUrl,
       metadata: this.metadata,
       supportedCountries:
         this.supportedCountries?.map((rel) => ({
@@ -150,6 +153,7 @@ export class ServiceProvider implements IServiceProvider {
       id: data.id,
       name: data.name,
       description: data.description,
+      iconUrl: data.iconUrl,
       metadata: data.metadata,
       createdAt: data.createdAt,
       updatedAt: data.updatedAt,

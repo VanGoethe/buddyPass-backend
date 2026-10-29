@@ -106,6 +106,7 @@ const serviceProvider = z
     id: z.string(),
     name: z.string(),
     description: z.string().nullable().optional(),
+    iconUrl: z.string().nullable().optional(),
     metadata: jsonValue.nullable().optional(),
     supportedCountries: z
       .array(
@@ -126,6 +127,7 @@ const createServiceProviderRequest = z
   .object({
     name: z.string().min(1),
     description: z.string().optional(),
+    iconUrl: z.string().optional(),
     metadata: jsonValue.optional(),
     supportedCountryIds: z.array(z.string()).optional(),
   })
@@ -148,6 +150,7 @@ const subscription = z
     needsCredentialReset: z.boolean(),
     expiresAt: z.string().datetime().nullable().optional(),
     userPrice: z.number().nullable().optional(),
+    accountCost: z.string().nullable().optional(),
     currencyId: z.string().nullable().optional(),
     isActive: z.boolean(),
     metadata: jsonValue.nullable().optional(),
@@ -335,6 +338,15 @@ const capacityAlert = z
     packingSubscriptionId: z.string().nullable(),
     headroom: z.number().int(),
     pendingCount: z.number().int(),
+    freeSeats: z.number().int(),
+    waiting: z.array(
+      z.object({
+        userId: z.string(),
+        name: z.string().nullable(),
+        requestedAt: z.string().datetime(),
+        place: z.number().int(),
+      })
+    ),
     recentRatePerHour: z.number().nullable(),
     historicalFillMs: z.number().int().nullable(),
     etaMs: z.number().int().nullable(),
@@ -351,6 +363,24 @@ const adminDashboard = z
       totalSubscriptions: z.number().int(),
       totalServiceProviders: z.number().int(),
     }),
+    inventory: z.array(
+      z.object({
+        serviceProviderId: z.string(),
+        serviceProviderName: z.string(),
+        total: z.number().int(),
+        taken: z.number().int(),
+        free: z.number().int(),
+      })
+    ),
+    waitingCount: z.number().int(),
+    expiringAccounts: z.array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        serviceProviderName: z.string(),
+        expiresAt: z.string().datetime(),
+      })
+    ),
     openCapacityAlerts: z.object({
       count: z.number().int(),
       alerts: z.array(capacityAlert),

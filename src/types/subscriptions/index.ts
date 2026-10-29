@@ -2,9 +2,10 @@
  * Subscription Type Definitions
  */
 
-import { Prisma } from "@prisma/client";
+import { Prisma, SlotAccess } from "@prisma/client";
 import { ICountry } from "../countries";
 import { User, UserRole } from "../users";
+import type { IncidentView } from "../../services/incidents";
 
 // Entity Interface
 export interface ISubscription {
@@ -23,6 +24,7 @@ export interface ISubscription {
   expiresAt?: Date | null;
   renewalInfo?: Prisma.JsonValue | null;
   userPrice?: Prisma.Decimal | null;
+  accountCost?: Prisma.Decimal | null;
   currencyId?: string | null;
   metadata?: Prisma.JsonValue | null;
   isActive: boolean;
@@ -39,6 +41,11 @@ export interface ISubscriptionSlot {
   assignedAt: Date;
   isActive: boolean;
   releasedAt?: Date | null;
+  access: SlotAccess;
+  termStartsAt?: Date | null;
+  termEndsAt?: Date | null;
+  blockedAt?: Date | null;
+  aliasLocalPart: string;
   createdAt: Date;
   updatedAt: Date;
   user?: User;
@@ -81,6 +88,7 @@ export interface CreateSubscriptionData {
   expiresAt?: Date;
   renewalInfo?: Prisma.JsonValue;
   userPrice?: number;
+  accountCost?: number;
   currencyId?: string;
   metadata?: Prisma.JsonValue;
   isActive?: boolean;
@@ -95,6 +103,7 @@ export interface UpdateSubscriptionData {
   expiresAt?: Date;
   renewalInfo?: Prisma.JsonValue;
   userPrice?: number;
+  accountCost?: number;
   currencyId?: string;
   metadata?: Prisma.JsonValue;
   isActive?: boolean;
@@ -138,12 +147,17 @@ export interface SubscriptionSlotResponse {
   subscriptionId: string;
   assignedAt: string;
   isActive: boolean;
+  access: SlotAccess;
+  termStartsAt?: string | null;
+  termEndsAt?: string | null;
+  blockedAt?: string | null;
+  alias: string;
   createdAt: string;
   updatedAt: string;
   subscription?: {
     id: string;
     name: string;
-    email: string;
+    email?: string | null;
     serviceProviderId: string;
     userPrice?: string | null;
     currencyId?: string | null;
@@ -170,6 +184,7 @@ export interface SubscriptionResponse {
   expiresAt?: string | null;
   renewalInfo?: Prisma.JsonValue | null;
   userPrice?: string | null;
+  accountCost?: string | null;
   currencyId?: string | null;
   metadata?: Prisma.JsonValue | null;
   isActive: boolean;
@@ -230,6 +245,38 @@ export interface ISubscriptionRepository {
   findByServiceProviderId(serviceProviderId: string): Promise<ISubscription[]>;
   count(): Promise<number>;
   countByServiceProviderId(serviceProviderId: string): Promise<number>;
+  inventoryByService(): Promise<ServiceInventoryRow[]>;
+  listExpiringAccounts(withinDays: number): Promise<ExpiringAccountRow[]>;
+  listOfferAccounts(): Promise<OfferAccountRow[]>;
+}
+
+export interface ServiceInventoryRow {
+  serviceProviderId: string;
+  serviceProviderName: string;
+  total: number;
+  taken: number;
+  free: number;
+}
+
+export interface ExpiringAccountRow {
+  id: string;
+  name: string;
+  serviceProviderName: string;
+  expiresAt: string;
+}
+
+export interface OfferAccountRow {
+  serviceProviderId: string;
+  serviceProviderName: string;
+  iconUrl: string | null;
+  description: string | null;
+  countryId: string | null;
+  countryName: string | null;
+  currencyCode: string | null;
+  userPrice: Prisma.Decimal | null;
+  maxSlots: number;
+  occupied: number;
+  allocatable: boolean;
 }
 
 export interface ISubscriptionSlotRepository {
@@ -276,6 +323,19 @@ export interface ISubscriptionRequestRepository {
       metadata?: Prisma.JsonValue;
     }
   ): Promise<ISubscriptionRequest>;
+  countPending(): Promise<number>;
+  listPendingDetailed(): Promise<PendingRequestRow[]>;
+}
+
+export interface PendingRequestRow {
+  id: string;
+  userId: string;
+  userName: string | null;
+  serviceProviderId: string;
+  serviceProviderName: string;
+  countryId: string | null;
+  countryName: string | null;
+  requestedAt: Date;
 }
 
 export interface CredentialReveal {
@@ -313,6 +373,28 @@ export interface ISubscriptionService {
     slotId: string,
     actor: { id: string; role: UserRole }
   ): Promise<void>;
+  listOffers(): Promise<PublicOffer[]>;
+  getLoginCode(
+    slotId: string,
+    actor: { id: string; role: UserRole }
+  ): Promise<{ code: string; receivedAt: string } | null>;
+  reportIncident(
+    slotId: string,
+    userId: string,
+    note: string
+  ): Promise<IncidentView>;
+}
+
+export interface PublicOffer {
+  serviceProviderId: string;
+  serviceProviderName: string;
+  iconUrl: string | null;
+  description: string | null;
+  countryId: string | null;
+  countryName: string | null;
+  currencyCode: string | null;
+  price: string;
+  freeSeats: number;
 }
 
 export interface SlotCandidate {
@@ -341,5 +423,9 @@ export interface ISlotAssignmentService {
     serviceProviderId: string,
     countryId?: string | null
   ): Promise<number>;
-  releaseExpiredSlots(): Promise<number>;
+  sweepSeatTerms(): Promise<{
+    releasedHolds: number;
+    blocked: number;
+    releasedBlocked: number;
+  }>;
 }

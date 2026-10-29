@@ -6,6 +6,7 @@ import { withTestCleanup } from "../utils/testCleanup";
 import { signAccessToken } from "../utils/accessToken";
 import {
   FUTURE_EXPIRES_AT,
+  occupiedSlotData,
   subscriptionSecrets,
 } from "../utils/subscriptionFixture";
 
@@ -69,7 +70,7 @@ describe("authorization", () => {
       });
       cleanup.trackSubscription(subscription.id);
       const slot = await prisma.subscriptionSlot.create({
-        data: { userId: owner.id, subscriptionId: subscription.id },
+        data: occupiedSlotData(owner.id, subscription.id),
       });
       cleanup.trackSubscriptionSlot(slot.id);
 

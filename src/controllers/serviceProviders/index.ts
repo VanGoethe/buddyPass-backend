@@ -76,6 +76,16 @@ function reject(next: NextFunction, details: string[], message: string): void {
   next(new ValidationError(message, details));
 }
 
+function iconIssue(value: unknown): string | null {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  if (typeof value !== "string" || !/^https?:\/\//.test(value)) {
+    return "Icon URL must be an http(s) URL";
+  }
+  return null;
+}
+
 const createServiceProviderValidation: RequestHandler = (req, _res, next) => {
   if (!isRecord(req.body)) {
     reject(next, ["Request body must be an object"], "Invalid input data");
@@ -100,6 +110,10 @@ const createServiceProviderValidation: RequestHandler = (req, _res, next) => {
   const metadataIssue = metadataError(req.body.metadata);
   if (metadataIssue) {
     details.push(metadataIssue);
+  }
+  const icon = iconIssue(req.body.iconUrl);
+  if (icon) {
+    details.push(icon);
   }
 
   if (details.length > 0) {
@@ -147,6 +161,10 @@ const updateServiceProviderValidation: RequestHandler = (req, _res, next) => {
   const metadataIssue = metadataError(req.body.metadata);
   if (metadataIssue) {
     details.push(metadataIssue);
+  }
+  const icon = iconIssue(req.body.iconUrl);
+  if (icon) {
+    details.push(icon);
   }
 
   if (details.length > 0) {
@@ -243,6 +261,7 @@ export class ServiceProviderController {
           name: typeof body.name === "string" ? body.name : "",
           description:
             typeof body.description === "string" ? body.description : undefined,
+          iconUrl: typeof body.iconUrl === "string" ? body.iconUrl : undefined,
           metadata: readMetadata(body.metadata),
         });
 
@@ -315,6 +334,12 @@ export class ServiceProviderController {
           name: typeof body.name === "string" ? body.name : undefined,
           description:
             typeof body.description === "string" ? body.description : undefined,
+          iconUrl:
+            body.iconUrl === null
+              ? null
+              : typeof body.iconUrl === "string"
+                ? body.iconUrl
+                : undefined,
           metadata: readMetadata(body.metadata),
         });
 

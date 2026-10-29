@@ -3,6 +3,16 @@ import { z } from "zod";
 
 dotenv.config();
 
+const optionalText = z
+  .string()
+  .optional()
+  .transform((value) => (value && value.length > 0 ? value : undefined));
+
+const optionalPort = z.preprocess(
+  (value) => (value === "" || value === undefined ? undefined : value),
+  z.coerce.number().int().positive().optional()
+);
+
 const envSchema = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
@@ -39,6 +49,21 @@ const envSchema = z.object({
     .optional()
     .transform((value) => (value && value.length > 0 ? value : undefined)),
   ADMIN_NAME: z.string().optional(),
+  SEAT_PAYMENT_HOLD_HOURS: z.coerce.number().int().positive().default(24),
+  SEAT_BLOCK_GRACE_DAYS: z.coerce.number().int().positive().default(3),
+  INBOX_DOMAIN: optionalText,
+  IMAP_HOST: optionalText,
+  IMAP_PORT: optionalPort,
+  IMAP_USER: optionalText,
+  IMAP_PASSWORD: optionalText,
+  SMTP_HOST: optionalText,
+  SMTP_PORT: optionalPort,
+  SMTP_USER: optionalText,
+  SMTP_PASSWORD: optionalText,
+  SMTP_FROM: optionalText,
+  IHELLA_API_BASE_URL: optionalText,
+  IHELLA_API_KEY: optionalText,
+  IHELLA_WEBHOOK_SECRET: optionalText,
 });
 
 export type Env = z.infer<typeof envSchema>;

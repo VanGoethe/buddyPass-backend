@@ -18,11 +18,13 @@ import {
   loginSchema,
   refreshSchema,
   registerSchema,
+  notificationIdSchema,
   updateProfileSchema,
 } from "../types/schemas";
 
 const router = Router();
 const userController = container.getUserController();
+const notificationController = container.getNotificationController();
 
 /**
  * @swagger
@@ -491,6 +493,39 @@ router.get(
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
+/**
+ * @swagger
+ * /users/notifications:
+ *   get:
+ *     summary: Notices for the signed-in user
+ *     tags: [Users]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Notifications
+ */
+router.get("/notifications", authenticateJWT, notificationController.listMine);
+
+/**
+ * @swagger
+ * /users/notifications/{notificationId}/read:
+ *   put:
+ *     summary: Mark one of your notices read
+ *     tags: [Users]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Notice marked read
+ */
+router.put(
+  "/notifications/:notificationId/read",
+  authenticateJWT,
+  validate(notificationIdSchema),
+  notificationController.markRead
+);
+
 router.get(
   "/auth/google/callback",
   passport.authenticate("google", { session: false }),

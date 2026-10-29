@@ -33,7 +33,13 @@ class App {
         credentials: true,
       })
     );
-    this.app.use(express.json({ limit: "100kb" }));
+    this.app.use((req, res, next) => {
+      if (req.originalUrl.startsWith("/api/payments/ihella/webhook")) {
+        express.raw({ type: "*/*", limit: "100kb" })(req, res, next);
+        return;
+      }
+      express.json({ limit: "100kb" })(req, res, next);
+    });
     this.app.use(express.urlencoded({ extended: true, limit: "100kb" }));
     this.app.use(requestLogger);
     this.app.use(passport.initialize());

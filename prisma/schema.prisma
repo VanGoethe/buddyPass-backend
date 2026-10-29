@@ -35,6 +35,10 @@ model User {
   refreshTokens        RefreshToken[]
   subscriptionSlots    SubscriptionSlot[]
   subscriptionRequests SubscriptionRequest[]
+  credentialReveals    CredentialReveal[]
+  loginIncidents       LoginIncident[]
+  notifications        Notification[]
+  payments             Payment[]
 
   @@map("users")
 }
@@ -66,6 +70,7 @@ model Currency {
 
   countries     Country[]
   subscriptions Subscription[]
+  payments      Payment[]
 
   @@map("currencies")
 }
@@ -98,6 +103,7 @@ model ServiceProvider {
   id          String   @id @default(cuid())
   name        String   @unique
   description String?
+  iconUrl     String?
   metadata    Json?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -139,6 +145,7 @@ model Subscription {
   expiresAt            DateTime?
   renewalInfo          Json?
   userPrice            Decimal?
+  accountCost          Decimal?
   currencyId           String?
   metadata             Json?
   isActive             Boolean   @default(true)
@@ -150,29 +157,48 @@ model Subscription {
   currency          Currency?          @relation(fields: [currencyId], references: [id], onDelete: SetNull)
   subscriptionSlots SubscriptionSlot[]
   capacityAlerts    CapacityAlert[]
+  credentialReveals CredentialReveal[]
+  loginIncidents    LoginIncident[]
+  payments          Payment[]
 
   @@index([serviceProviderId, countryId, isActive])
   @@index([currencyId])
   @@map("subscriptions")
 }
 
+enum SlotAccess {
+  AWAITING_PAYMENT
+  ACTIVE
+  BLOCKED
+}
+
 model SubscriptionSlot {
-  id             String    @id @default(cuid())
+  id             String     @id @default(cuid())
   userId         String
   subscriptionId String
-  assignedAt     DateTime  @default(now())
-  isActive       Boolean   @default(true)
+  assignedAt     DateTime   @default(now())
+  isActive       Boolean    @default(true)
   releasedAt     DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  access         SlotAccess @default(AWAITING_PAYMENT)
+  termStartsAt   DateTime?
+  termEndsAt     DateTime?
+  blockedAt      DateTime?
+  aliasLocalPart String     @unique
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
 
-  user            User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subscription    Subscription          @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-  assignedRequest SubscriptionRequest?
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription      Subscription          @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  assignedRequest   SubscriptionRequest?
+  credentialReveals CredentialReveal[]
+  loginCodes        LoginCode[]
+  loginIncidents    LoginIncident[]
+  payments          Payment[]
 
-  @@unique([userId, subscriptionId])
   @@index([subscriptionId, isActive])
   @@index([userId])
+  @@index([access, termEndsAt])
+  @@index([access, assignedAt])
   @@map("subscription_slots")
 }
 
@@ -237,4 +263,128 @@ model CapacityAlert {
   @@index([status, openedAt])
   @@index([serviceProviderId])
   @@map("capacity_alerts")
+}
+
+model CredentialReveal {
+  id             String   @id @default(cuid())
+  actorUserId    String
+  slotId         String
+  subscriptionId String
+  createdAt      DateTime @default(now())
+
+  actor        User             @relation(fields: [actorUserId], references: [id], onDelete: Cascade)
+  slot         SubscriptionSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  subscription Subscription     @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId, createdAt])
+  @@map("credential_reveals")
+}
+
+model LoginCode {
+  id         String   @id @default(cuid())
+  slotId     String?
+  alias      String
+  code       String
+  receivedAt DateTime @default(now())
+
+  slot SubscriptionSlot? @relation(fields: [slotId], references: [id], onDelete: Cascade)
+
+  @@index([slotId, receivedAt])
+  @@index([receivedAt])
+  @@map("login_codes")
+}
+
+enum IncidentStatus {
+  OPEN
+  RESOLVED
+}
+
+model LoginIncident {
+  id             String         @id @default(cuid())
+  slotId         String
+  userId         String
+  subscriptionId String
+  note           String
+  status         IncidentStatus @default(OPEN)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  resolvedAt     DateTime?
+
+  slot         SubscriptionSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscription     @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId, status])
+  @@index([slotId])
+  @@map("login_incidents")
+}
+
+enum NotificationKind {
+  PROVIDER_EXPIRY
+  SEAT_EXPIRY
+  SEAT_CHANGE
+  PAYMENT_CONFIRMATION
+}
+
+enum NotificationStage {
+  NONE
+  WEEK
+  DAY
+}
+
+model Notification {
+  id              String             @id @default(cuid())
+  recipientUserId String
+  kind            NotificationKind
+  body            String
+  subscriptionId  String?
+  slotId          String?
+  paymentId       String?
+  stage           NotificationStage  @default(NONE)
+  dedupeKey       String?            @unique
+  readAt          DateTime?
+  createdAt       DateTime           @default(now())
+
+  recipient User @relation(fields: [recipientUserId], references: [id], onDelete: Cascade)
+
+  @@index([recipientUserId, createdAt])
+  @@index([kind, createdAt])
+  @@map("notifications")
+}
+
+enum PaymentMethod {
+  IHELLA
+  LUMICASH
+  ENOTI
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+model Payment {
+  id                   String        @id @default(cuid())
+  userId               String
+  slotId               String
+  subscriptionId       String
+  amount               Decimal
+  currencyId           String
+  method               PaymentMethod
+  status               PaymentStatus @default(PENDING)
+  providerRef          String?       @unique
+  paidAt               DateTime?
+  settledAfterRelease  Boolean       @default(false)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slot         SubscriptionSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  subscription Subscription     @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  currency     Currency         @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+
+  @@index([slotId, status])
+  @@index([status, createdAt])
+  @@map("payments")
 }

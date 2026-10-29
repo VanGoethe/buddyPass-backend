@@ -42,6 +42,7 @@ export class PrismaServiceProviderRepository implements IServiceProviderReposito
         data: {
           name: data.name.trim(),
           description: data.description?.trim() || null,
+          iconUrl: data.iconUrl?.trim() || null,
           metadata: toJsonInput(data.metadata) ?? Prisma.DbNull,
         },
       });
@@ -161,6 +162,10 @@ export class PrismaServiceProviderRepository implements IServiceProviderReposito
 
       if (data.description !== undefined) {
         updateData.description = data.description?.trim() || null;
+      }
+
+      if (data.iconUrl !== undefined) {
+        updateData.iconUrl = data.iconUrl?.trim() || null;
       }
 
       if (data.metadata !== undefined) {

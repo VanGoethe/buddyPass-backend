@@ -5,6 +5,30 @@ All notable changes to the BuddyPass Backend project will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-10-23
+
+Breaking release. A customer no longer receives streaming credentials the moment a seat is assigned, and a provider renewal no longer clears the people already seated.
+
+### Added
+
+- Admin dashboard inventory per service (total, taken, free), waiting count, and accounts whose provider date falls inside the next week.
+- `PUT /api/admin/users/:userId/verification` verifies a local account. The user profile includes that person's seats and pending requests.
+- Public `GET /api/offers` lists price, currency, and free seats. Streaming emails and wholesale cost stay off that response. Providers can store an icon. Shared accounts store `accountCost`.
+- `GET /api/admin/waiting-line` is a read-only line with place in queue. Assignment stays automatic.
+- Capacity alerts include free seats and who is waiting. `POST /api/admin/capacity-alerts/:alertId/accounts` stocks the next login for that provider and country.
+- Credential reveals are stored and listed at `GET /api/admin/subscriptions/:id/reveals`.
+- Each seat has its own email alias. Login codes from the admin inbox are matched by alias and shown to the paid seat holder or an admin for 15 minutes. Unmatched codes are listed for the admin. IMAP polling runs only when the inbox is configured.
+- Seat holders can report a dead login. Admins can list and resolve those incidents.
+- Notices are stored for provider expiry (admins only), customer term expiry, seat changes, and payment confirmation. `GET /api/users/notifications` and `GET /api/admin/notifications` list them. Outbound mail sends only when SMTP is configured.
+- Seat payments for Ihella, Lumicash, and Bancobu eNoti. The amount comes from the account. Lumicash and eNoti wait for an admin to confirm. Ihella calls out only when its API is configured, and its webhook checks an HMAC of the raw body. A confirmed payment starts or extends the customer's month on the same seat.
+
+### Changed
+
+- A new seat waits 24 hours for its first payment (`SEAT_PAYMENT_HOLD_HOURS`), then returns to the line. After the paid month, the seat stays blocked for 3 days (`SEAT_BLOCK_GRACE_DAYS`) so the same person can renew it, then it is freed.
+- Renewing the provider date keeps current holders. An account past that date takes no new seats until it is renewed.
+- A person can hold a new seat on an account they have already left. One active seat per person per account is still enforced.
+- Existing active seats are backfilled as paid-through one month from the day they were assigned, so a deploy does not lock current holders out.
+
 ## [Unreleased]
 
 ### Added

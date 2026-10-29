@@ -110,4 +110,67 @@ export class AdminController {
       next(error);
     }
   };
+
+  setVerified = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const user = await this.adminService.setVerified(
+        req.params.userId,
+        req.body.isVerified
+      );
+      sendSuccess(res, { user }, "Verification updated");
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  listWaitingLine = async (
+    _req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      sendSuccess(res, { waiting: await this.adminService.listWaitingLine() });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  createAccountFromAlert = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const body = req.body as {
+        name: string;
+        email: string;
+        password: string;
+        maxSlots: number;
+        expiresAt?: string;
+        userPrice?: number;
+        accountCost?: number;
+        currencyId?: string;
+        isActive?: boolean;
+      };
+      const subscription = await this.adminService.createAccountFromAlert(
+        req.params.alertId,
+        {
+          ...body,
+          expiresAt: body.expiresAt ? new Date(body.expiresAt) : undefined,
+        }
+      );
+      sendSuccess(res, subscription, "Account created from alert", 201);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  listReveals = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const reveals = await this.adminService.listReveals(req.params.id);
+      sendSuccess(res, { reveals });
+    } catch (error) {
+      next(error);
+    }
+  };
 }

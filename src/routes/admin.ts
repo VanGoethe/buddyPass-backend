@@ -7,13 +7,24 @@ import {
   adminUpdateUserSchema,
   createAdminSchema,
   listUsersSchema,
+  alertAccountSchema,
+  idParamSchema,
+  incidentIdSchema,
+  incidentListSchema,
+  notificationIdSchema,
+  paymentIdSchema,
   updateRoleSchema,
   updateStatusSchema,
   userIdSchema,
+  verifyUserSchema,
 } from "../types/schemas";
 
 const router = Router();
 const adminController = container.getAdminController();
+const paymentController = container.getPaymentController();
+const notificationController = container.getNotificationController();
+const incidentController = container.getIncidentController();
+const loginCodeController = container.getLoginCodeController();
 
 router.use(adminRateLimiter);
 router.use(authenticateJWT);
@@ -232,5 +243,208 @@ router.put(
  *         description: User deleted
  */
 router.delete("/users/:userId", validate(userIdSchema), adminController.deleteUser);
+
+/**
+ * @swagger
+ * /admin/users/{userId}/verification:
+ *   put:
+ *     summary: Verify or unverify a local account
+ *     tags: [Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Verification updated
+ */
+router.put(
+  "/users/:userId/verification",
+  validate(verifyUserSchema),
+  adminController.setVerified
+);
+
+/**
+ * @swagger
+ * /admin/waiting-line:
+ *   get:
+ *     summary: Pending seat requests
+ *     description: Read-only line. Assignment stays automatic.
+ *     tags: [Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Waiting line
+ */
+router.get("/waiting-line", adminController.listWaitingLine);
+
+/**
+ * @swagger
+ * /admin/capacity-alerts/{alertId}/accounts:
+ *   post:
+ *     summary: Stock the next account for an open alert
+ *     description: Provider and country come from the alert. Pending requests for that pool are filled automatically.
+ *     tags: [Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       201:
+ *         description: Account created
+ */
+router.post(
+  "/capacity-alerts/:alertId/accounts",
+  validate(alertAccountSchema),
+  adminController.createAccountFromAlert
+);
+
+/**
+ * @swagger
+ * /admin/subscriptions/{id}/reveals:
+ *   get:
+ *     summary: Credential reveal history
+ *     tags: [Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Reveal records
+ */
+router.get(
+  "/subscriptions/:id/reveals",
+  validate(idParamSchema),
+  adminController.listReveals
+);
+
+/**
+ * @swagger
+ * /admin/incidents:
+ *   get:
+ *     summary: Login incidents
+ *     tags: [Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: subscriptionId
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Incidents
+ */
+router.get("/incidents", validate(incidentListSchema), incidentController.list);
+
+/**
+ * @swagger
+ * /admin/incidents/{incidentId}:
+ *   put:
+ *     summary: Resolve a login incident
+ *     tags: [Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Incident resolved
+ */
+router.put(
+  "/incidents/:incidentId",
+  validate(incidentIdSchema),
+  incidentController.resolve
+);
+
+/**
+ * @swagger
+ * /admin/notifications:
+ *   get:
+ *     summary: Notices the system has sent
+ *     tags: [Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Notifications
+ */
+router.get("/notifications", notificationController.listAll);
+
+/**
+ * @swagger
+ * /admin/notifications/{notificationId}/read:
+ *   put:
+ *     summary: Mark a notice read
+ *     tags: [Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Notice marked read
+ */
+router.put(
+  "/notifications/:notificationId/read",
+  validate(notificationIdSchema),
+  notificationController.markRead
+);
+
+/**
+ * @swagger
+ * /admin/login-codes:
+ *   get:
+ *     summary: Unmatched login codes
+ *     tags: [Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Codes that did not match a seat alias
+ */
+router.get("/login-codes", loginCodeController.listUnmatched);
+
+/**
+ * @swagger
+ * /admin/payments:
+ *   get:
+ *     summary: Seat payments
+ *     tags: [Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Payments
+ */
+router.get("/payments", paymentController.list);
+
+/**
+ * @swagger
+ * /admin/payments/{paymentId}/confirm:
+ *   post:
+ *     summary: Confirm a pending payment
+ *     tags: [Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Payment confirmed
+ */
+router.post(
+  "/payments/:paymentId/confirm",
+  validate(paymentIdSchema),
+  paymentController.confirm
+);
+
+/**
+ * @swagger
+ * /admin/payments/{paymentId}/fail:
+ *   put:
+ *     summary: Mark a pending payment as failed
+ *     tags: [Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Payment failed
+ */
+router.put(
+  "/payments/:paymentId/fail",
+  validate(paymentIdSchema),
+  paymentController.fail
+);
 
 export default router;

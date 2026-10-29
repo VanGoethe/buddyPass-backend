@@ -6,6 +6,7 @@ import { container } from "../../../src/container";
 import { withTestCleanup } from "../../utils/testCleanup";
 import {
   FUTURE_EXPIRES_AT,
+  occupiedSlotData,
   subscriptionSecrets,
 } from "../../utils/subscriptionFixture";
 
@@ -189,7 +190,7 @@ describe("capacity alerts", () => {
       });
       cleanup.trackSubscription(subscription.id);
       const slot = await prisma.subscriptionSlot.create({
-        data: { userId: member.id, subscriptionId: subscription.id },
+        data: occupiedSlotData(member.id, subscription.id),
       });
       cleanup.trackSubscriptionSlot(slot.id);
       await container

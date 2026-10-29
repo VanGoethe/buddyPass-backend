@@ -10,6 +10,7 @@ export interface IServiceProvider {
   id: string;
   name: string;
   description?: string | null;
+  iconUrl?: string | null;
   metadata?: Prisma.JsonValue | null;
   createdAt: Date;
   updatedAt: Date;
@@ -20,6 +21,7 @@ export interface IServiceProvider {
 export interface CreateServiceProviderData {
   name: string;
   description?: string;
+  iconUrl?: string;
   metadata?: Prisma.JsonValue;
   supportedCountryIds?: string[];
 }
@@ -27,6 +29,7 @@ export interface CreateServiceProviderData {
 export interface UpdateServiceProviderData {
   name?: string;
   description?: string;
+  iconUrl?: string | null;
   metadata?: Prisma.JsonValue;
   supportedCountryIds?: string[];
 }
@@ -36,6 +39,7 @@ export interface ServiceProviderResponse {
   id: string;
   name: string;
   description?: string | null;
+  iconUrl?: string | null;
   metadata?: Prisma.JsonValue | null;
   supportedCountries?: Array<{
     id: string;

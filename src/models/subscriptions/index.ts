@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, SlotAccess } from "@prisma/client";
 import {
   ISubscription,
   ISubscriptionSlot,
@@ -42,6 +42,7 @@ export class Subscription implements ISubscription {
   public readonly expiresAt?: Date | null;
   public readonly renewalInfo?: Prisma.JsonValue | null;
   public readonly userPrice?: Prisma.Decimal | null;
+  public readonly accountCost?: Prisma.Decimal | null;
   public readonly currencyId?: string | null;
   public readonly metadata?: Prisma.JsonValue | null;
   public readonly isActive: boolean;
@@ -65,6 +66,7 @@ export class Subscription implements ISubscription {
     this.expiresAt = data.expiresAt;
     this.renewalInfo = data.renewalInfo;
     this.userPrice = data.userPrice;
+    this.accountCost = data.accountCost;
     this.currencyId = data.currencyId;
     this.metadata = data.metadata;
     this.isActive = data.isActive;
@@ -106,6 +108,9 @@ export class Subscription implements ISubscription {
     if (data.userPrice !== undefined && data.userPrice < 0) {
       throw new ValidationError("User price cannot be negative");
     }
+    if (data.accountCost !== undefined && data.accountCost < 0) {
+      throw new ValidationError("Account cost cannot be negative");
+    }
     if (data.expiresAt && data.expiresAt <= new Date()) {
       throw new ValidationError("Expiration date must be in the future");
     }
@@ -129,6 +134,9 @@ export class Subscription implements ISubscription {
     }
     if (data.userPrice !== undefined && data.userPrice < 0) {
       throw new ValidationError("User price cannot be negative");
+    }
+    if (data.accountCost !== undefined && data.accountCost < 0) {
+      throw new ValidationError("Account cost cannot be negative");
     }
     if (data.expiresAt && data.expiresAt <= new Date()) {
       throw new ValidationError("Expiration date must be in the future");
@@ -161,6 +169,7 @@ export class Subscription implements ISubscription {
       expiresAt: this.expiresAt?.toISOString() || null,
       renewalInfo: this.renewalInfo,
       userPrice: this.userPrice?.toString() || null,
+      accountCost: this.accountCost?.toString() || null,
       currencyId: this.currencyId,
       metadata: this.metadata,
       isActive: this.isActive,
@@ -186,6 +195,7 @@ export class Subscription implements ISubscription {
       expiresAt: data.expiresAt,
       renewalInfo: data.renewalInfo,
       userPrice: data.userPrice,
+      accountCost: data.accountCost,
       currencyId: data.currencyId,
       metadata: data.metadata,
       isActive: data.isActive,
@@ -203,6 +213,11 @@ export class SubscriptionSlot implements ISubscriptionSlot {
   public readonly assignedAt: Date;
   public readonly isActive: boolean;
   public readonly releasedAt?: Date | null;
+  public readonly access: SlotAccess;
+  public readonly termStartsAt?: Date | null;
+  public readonly termEndsAt?: Date | null;
+  public readonly blockedAt?: Date | null;
+  public readonly aliasLocalPart: string;
   public readonly createdAt: Date;
   public readonly updatedAt: Date;
   public readonly user?: User;
@@ -215,6 +230,11 @@ export class SubscriptionSlot implements ISubscriptionSlot {
     this.assignedAt = data.assignedAt;
     this.isActive = data.isActive;
     this.releasedAt = data.releasedAt;
+    this.access = data.access;
+    this.termStartsAt = data.termStartsAt;
+    this.termEndsAt = data.termEndsAt;
+    this.blockedAt = data.blockedAt;
+    this.aliasLocalPart = data.aliasLocalPart;
     this.createdAt = data.createdAt;
     this.updatedAt = data.updatedAt;
     this.user = data.user;
@@ -222,19 +242,26 @@ export class SubscriptionSlot implements ISubscriptionSlot {
   }
 
   public toResponse(): SubscriptionSlotResponse {
+    const credentialsOpen = this.access === "ACTIVE";
+    const domain = process.env.INBOX_DOMAIN;
     return {
       id: this.id,
       userId: this.userId,
       subscriptionId: this.subscriptionId,
       assignedAt: this.assignedAt.toISOString(),
       isActive: this.isActive,
+      access: this.access,
+      termStartsAt: this.termStartsAt?.toISOString() ?? null,
+      termEndsAt: this.termEndsAt?.toISOString() ?? null,
+      blockedAt: this.blockedAt?.toISOString() ?? null,
+      alias: domain ? `${this.aliasLocalPart}@${domain}` : this.aliasLocalPart,
       createdAt: this.createdAt.toISOString(),
       updatedAt: this.updatedAt.toISOString(),
       subscription: this.subscription
         ? {
             id: this.subscription.id,
             name: this.subscription.name,
-            email: this.subscription.email,
+            email: credentialsOpen ? this.subscription.email : null,
             serviceProviderId: this.subscription.serviceProviderId,
             userPrice: this.subscription.userPrice?.toString() || null,
             currencyId: this.subscription.currencyId,
@@ -252,6 +279,11 @@ export class SubscriptionSlot implements ISubscriptionSlot {
       assignedAt: data.assignedAt,
       isActive: data.isActive,
       releasedAt: data.releasedAt,
+      access: data.access,
+      termStartsAt: data.termStartsAt,
+      termEndsAt: data.termEndsAt,
+      blockedAt: data.blockedAt,
+      aliasLocalPart: data.aliasLocalPart,
       createdAt: data.createdAt,
       updatedAt: data.updatedAt,
       subscription: data.subscription

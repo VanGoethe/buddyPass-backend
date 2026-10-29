@@ -93,4 +93,30 @@ export class PrismaSubscriptionRequestRepository
     });
     return SubscriptionRequest.fromPrisma(request);
   }
+
+  async countPending(): Promise<number> {
+    return this.prisma.subscriptionRequest.count({ where: { status: "PENDING" } });
+  }
+
+  async listPendingDetailed() {
+    const rows = await this.prisma.subscriptionRequest.findMany({
+      where: { status: "PENDING" },
+      orderBy: { requestedAt: "asc" },
+      include: {
+        user: { select: { name: true } },
+        serviceProvider: { select: { name: true } },
+        country: { select: { name: true } },
+      },
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      userId: row.userId,
+      userName: row.user.name,
+      serviceProviderId: row.serviceProviderId,
+      serviceProviderName: row.serviceProvider.name,
+      countryId: row.countryId,
+      countryName: row.country?.name ?? null,
+      requestedAt: row.requestedAt,
+    }));
+  }
 }

@@ -1,4 +1,10 @@
 import { UserRole } from "@prisma/client";
+import { ISeatAccess } from "../payments";
+import { IRevealStore } from "../../repositories/reveals";
+import { IInboxReader } from "../inbox";
+import { IncidentService, IncidentView } from "../incidents";
+import { INotificationService } from "../notifications";
+import { PublicOffer } from "../../types/subscriptions";
 import {
   CreateSubscriptionData,
   CreateSubscriptionRequestData,
@@ -37,7 +43,12 @@ export class SubscriptionService implements ISubscriptionService {
     private serviceProviderRepository: IServiceProviderRepository,
     private countryRepository: ICountryRepository,
     private slotAssignmentService: ISlotAssignmentService,
-    private capacityForecast?: ICapacityForecastService
+    private capacityForecast?: ICapacityForecastService,
+    private seatAccess?: ISeatAccess,
+    private revealStore?: IRevealStore,
+    private inbox?: IInboxReader,
+    private incidents?: IncidentService,
+    private notifications?: INotificationService
   ) {}
 
   async createSubscription(
@@ -253,6 +264,23 @@ export class SubscriptionService implements ISubscriptionService {
         "CREDENTIALS_UNAVAILABLE"
       );
     }
+    if (actor.role !== UserRole.ADMIN) {
+      const allowed = this.seatAccess
+        ? await this.seatAccess.customerCanUseSeat(slot)
+        : false;
+      if (!allowed) {
+        throw new ForbiddenError(
+          "Credentials are available after payment is confirmed",
+          "PAYMENT_REQUIRED"
+        );
+      }
+    }
+
+    await this.revealStore?.record({
+      actorUserId: actor.id,
+      slotId,
+      subscriptionId: subscription.id,
+    });
 
     logger.info(
       { userId: actor.id, slotId, subscriptionId: subscription.id },
@@ -276,6 +304,12 @@ export class SubscriptionService implements ISubscriptionService {
   ): Promise<void> {
     const slot = await this.requireOwnedSlot(slotId, actor);
     await this.subscriptionSlotRepository.release(slot.id);
+    await this.notifications?.notifySeatChange({
+      userId: slot.userId,
+      slotId: slot.id,
+      subscriptionId: slot.subscriptionId,
+      action: "freed",
+    });
     if (slot.subscription) {
       await this.slotAssignmentService.processPending(
         slot.subscription.serviceProviderId,
@@ -283,6 +317,79 @@ export class SubscriptionService implements ISubscriptionService {
       );
       await this.refreshCapacity(slot.subscription.serviceProviderId);
     }
+  }
+
+  async listOffers(): Promise<PublicOffer[]> {
+    const rows = await this.subscriptionRepository.listOfferAccounts();
+    const groups = new Map<string, PublicOffer & { priceValue: number }>();
+    for (const row of rows) {
+      if (!row.allocatable || row.userPrice === null || !row.currencyCode) {
+        continue;
+      }
+      const key = `${row.serviceProviderId}:${row.countryId ?? ""}`;
+      const priceValue = Number(row.userPrice);
+      const free = Math.max(row.maxSlots - row.occupied, 0);
+      const current = groups.get(key);
+      if (!current) {
+        groups.set(key, {
+          serviceProviderId: row.serviceProviderId,
+          serviceProviderName: row.serviceProviderName,
+          iconUrl: row.iconUrl,
+          description: row.description,
+          countryId: row.countryId,
+          countryName: row.countryName,
+          currencyCode: row.currencyCode,
+          price: row.userPrice.toString(),
+          freeSeats: free,
+          priceValue,
+        });
+        continue;
+      }
+      current.freeSeats += free;
+      if (priceValue < current.priceValue) {
+        current.priceValue = priceValue;
+        current.price = row.userPrice.toString();
+        current.currencyCode = row.currencyCode;
+      }
+    }
+    return [...groups.values()].map(({ priceValue: _priceValue, ...offer }) => offer);
+  }
+
+  async getLoginCode(
+    slotId: string,
+    actor: { id: string; role: UserRole }
+  ): Promise<{ code: string; receivedAt: string } | null> {
+    const slot = await this.requireOwnedSlot(slotId, actor);
+    if (actor.role !== UserRole.ADMIN) {
+      const allowed = this.seatAccess
+        ? await this.seatAccess.customerCanUseSeat(slot)
+        : false;
+      if (!allowed) {
+        throw new ForbiddenError(
+          "Login codes are available after payment is confirmed",
+          "PAYMENT_REQUIRED"
+        );
+      }
+    }
+    if (!this.inbox) {
+      return null;
+    }
+    const code = await this.inbox.getRecentCode(slotId);
+    if (!code) {
+      return null;
+    }
+    return { code: code.code, receivedAt: code.receivedAt };
+  }
+
+  async reportIncident(
+    slotId: string,
+    userId: string,
+    note: string
+  ): Promise<IncidentView> {
+    if (!this.incidents) {
+      throw new ConflictError("Incidents are not available", "INCIDENTS_UNAVAILABLE");
+    }
+    return this.incidents.report(slotId, userId, note);
   }
 
   private async requireOwnedSlot(

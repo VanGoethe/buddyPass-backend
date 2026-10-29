@@ -63,6 +63,8 @@ function toView(row: AlertRecord): CapacityAlertView {
     packingSubscriptionId: row.packingSubscriptionId,
     headroom: row.headroom,
     pendingCount: row.pendingCount,
+    freeSeats: row.headroom + row.pendingCount,
+    waiting: [],
     recentRatePerHour: row.recentRatePerHour,
     historicalFillMs: toNumber(row.historicalFillMs),
     etaMs: toNumber(row.etaMs),
