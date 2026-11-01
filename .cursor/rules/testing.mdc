@@ -1,0 +1,28 @@
+---
+description: Jest tests and mandatory database cleanup
+globs: tests/**/*.ts
+alwaysApply: false
+---
+
+# Tests
+
+Unit tests mock the database. Integration and end-to-end tests use `DATABASE_URL` on a database that can be wiped, never production.
+
+A test that inserts rows uses `TestDataCleanup` from `tests/utils/testCleanup.ts`. Cleanup still runs when the test fails. Track every row created:
+
+- `trackUser`, `trackCountry`, `trackCurrency`, `trackServiceProvider`
+- `trackSubscription`, `trackSubscriptionSlot`, `trackSubscriptionRequest`, `trackCapacityAlert`
+
+`cleanupAll` deletes alerts, subscriptions (and their slots and requests), providers, countries, currencies, then users. Prefer `getOrCreateTestUser`, `getOrCreateTestCountry`, `getOrCreateTestServiceProvider`, and `getOrCreateTestCurrency`.
+
+Use a unique email or code. Do not assert that the database is empty; seed rows may remain.
+
+```typescript
+it(
+  "creates a user and removes it",
+  withTestCleanup(async (cleanup) => {
+    const user = await cleanup.getOrCreateTestUser(`seat-${Date.now()}@example.com`);
+    expect(user.isVerified).toBe(true);
+  })
+);
+```

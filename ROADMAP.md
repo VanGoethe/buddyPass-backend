@@ -1,6 +1,6 @@
 # BuddyPass roadmap
 
-Date: 2026-10-23
+Plan date: 2026-10-23. Current state revised: 2026-11-01.
 
 BuddyPass shares streaming-service accounts. An operator stocks a real login. A user requests a seat. A free seat hands that user the email and password. The first operator is the founder, using their own subscriptions. Once that loop is proven, other people can add and manage their own subscriptions and share seats on them.
 
@@ -40,7 +40,7 @@ The figures below are an example, not a final price. A $20 Netflix account is ab
 
 The admin opens the streaming service, such as Netflix, and sets the account up there. The admin catalog is built so more services can be added the same way. When an admin adds that service in BuddyPass they set the service type, an icon, a description, the full account cost, how many seats that account holds, and the price per seat, and they enter the credentials for the account they just created. Those credentials are what a customer receives after buying a seat. The customer signs in on the streaming service with them. Netflix is the first one. Prime Video, ChatGPT, and later services use the same fields.
 
-Payment is monitored automatically. The first route is Ihella. Lumicash is a secondary route.
+The customer chooses manual verification or an online payment. Manual verification is confirmed by the admin after the customer pays them directly. Online payment through Ihella, Lumicash, and other gateways comes after that. Where the gateway can charge on its own, confirmation is automatic. Where it cannot, the admin is told and confirms it.
 
 The step-by-step customer flow is in [USER_JOURNEY.md](USER_JOURNEY.md).
 
@@ -59,10 +59,10 @@ The admin renews the provider account before it lapses. The user's date stays an
 The admin side runs the same loop without checking each order by hand.
 
 - Seat inventory per service: total, taken, and free.
-- Order handling is automatic. There is no manual verification step.
-- Payment monitoring through the provider API.
+- Seat assignment stays automatic.
+- The customer chooses manual verification or an online payment. The admin confirms manual payments. A gateway confirms an online payment when it can charge on its own.
 - The credentials the admin entered for each account, delivered to the buyer of a seat.
-- A 2FA inbox watch that routes each code by alias.
+- A 2FA inbox watch that routes each code to the one active claim on that shared account.
 - Expiry and renewal notifications on both clocks: the provider date to the admin only, the seat date to that customer.
 - Blocking a seat when it is past due, and freeing it when it is not renewed.
 - Reassignment of a freed seat, including to a returning user.
@@ -86,22 +86,51 @@ Where the provider API can charge on its own, renewal is fully automatic. Lumica
 
 ## Current state
 
-In place today:
+Revised 2026-11-01 so this section matches the API. The sequence below is still the plan. `ADMIN_INVENTORY.md` is the operator checklist.
 
-- Register, log in, refresh, log out, and Google sign-in. Google links an existing account only when that account is already verified.
-- Admins manage users, service providers, countries, currencies, and subscriptions.
-- Streaming passwords are encrypted with AES-256-GCM. Reveal returns the email and password to the active seat holder or an admin, and the response is not cached.
-- Seat assignment is transactional and first-in, first-out. Releasing a seat fills the next pending request. Expired subscriptions drop their seats on an hourly sweep.
-- Capacity alerts are listed at `GET /api/admin/capacity-alerts` and summarized on the admin dashboard. Creating the next streaming account stays manual.
+### In the API
 
-The loop is not closed:
+The founder is still the only supplier. Subscriptions have no owner, there are no payouts, and there is no WhatsApp assistant. There is no admin website. Swagger at `/api-docs` is the admin surface.
 
-- A local account is unverified, and a seat request requires a verified user. There is no verification step and no password reset, so email-and-password users cannot join the pool. Google sign-in is the path that can.
-- Offers are not browsable. Provider, country, and currency lists are public. Price, plan, and free seats live on subscriptions, and those endpoints are admin-only. A user has to already know a provider id.
-- A pending request can be listed. It cannot be cancelled. `CANCELLED` and `REJECTED` are unused. The user has no queue position and no signal when a seat opens. Capacity timing is admin-only.
-- `userPrice` is stored. Nothing charges it, and releasing a seat has no money consequence. Payments, outbound email, and an admin UI are outside this service today.
-- A password change does not reach the other holders. There is no report when a login stops working, no stored history of who revealed a password, and no profile or PIN for shared plans. Expiry releases everyone. Renewal is an unstructured JSON field, not a flow that keeps seats.
-- A capacity alert warns and then clears itself when the pool recovers. It does not show the waiting queue or turn into the next subscription.
+- Register, log in, refresh, log out, and Google sign-in. Google links an existing account only when that account is already verified. A new Google account is created already verified.
+- A local account confirms its email from a link (`POST /api/users/verify-email`, resend at `POST /api/users/verification-email`). Someone who is locked out can reset a password (`POST /api/users/forgot-password`, `POST /api/users/reset-password`). The reset revokes refresh tokens and does not open a session. Both links need SMTP and `APP_PUBLIC_URL`. An admin can still verify or block a local account with `PUT /api/admin/users/:userId/verification`. A signed-in user can change their password.
+- The profile stores full name, phone, country, and optional timezone, age, where they heard about BuddyPass, and metadata. Email is shown and not changed here. `POST /api/subscriptions/request` returns 403 until the name, phone, and country are set. People who already have a seat are not backfilled.
+- Admins manage users, service providers, countries, currencies, and subscriptions. A provider can store an icon. An account stores wholesale `accountCost`, seat `userPrice`, `maxSlots`, provider `expiresAt`, and an AES-256-GCM password.
+- Public `GET /api/offers` lists provider, country, icon, description, price, currency, and free seats. Streaming emails and wholesale cost stay off that response. A seat request sends `serviceProviderId` and `countryId`, which the offer includes.
+- Seat assignment is transactional and first-in, first-out, and will not overbook `maxSlots`. Releasing a seat fills the next pending request. An hourly sweep applies the payment hold, the post-term block, and the release. A payment that is waiting for an admin keeps the seat until that payment is confirmed or rejected.
+- The provider clock and the customer clock are separate. Renewing `expiresAt` keeps current holders. An account past that date takes no new seats until it is renewed. The customer month starts when payment is confirmed (`termStartsAt`, `termEndsAt`). A new unpaid seat is held for `SEAT_PAYMENT_HOLD_HOURS` (24). After the paid month, the seat stays blocked for `SEAT_BLOCK_GRACE_DAYS` (3), then it is freed. The holder can leave, which releases the seat. Early-leave proration is not decided. `renewalInfo` is still an unstructured JSON field and is not the term.
+- Credentials stay hidden until the seat is paid. Reveal returns the email and password to the paid seat holder or an admin, is not cached, and is stored. Replacing the password overwrites the stored secret, so the next reveal is the new one.
+- Each seat still has an email alias. A shared streaming login does not use that alias for its code. The customer taps Get verification code, which queues one active turn per account. BuddyPass matches the next inbox message to that turn by the account email, the provider's sender domains, and the time the turn started. Later taps wait, with a short countdown, and the copy changes when their turn starts. Codes are kept for 15 minutes. Unmatched codes go to connected admins.
+- A seat holder can report a dead login. Admins list and resolve those incidents.
+- Notices are stored and pushed on socket.io at `/socket.io` before email. Mail sends only when SMTP is configured. Kinds in use: provider expiry (admins only), customer term expiry, seat assigned / blocked / freed / renewed, payment confirmation, payments an admin must verify, and a customer who did not receive a verification code.
+- Capacity alerts open when the last allocatable account in a provider-and-country pool takes its first seat, or when pending requests exceed free seats. They name who is waiting and include pace and ETA. `POST /api/admin/capacity-alerts/:alertId/accounts` stocks the next login for that pool. Signup at the streaming service stays manual.
+- The admin dashboard shows inventory per service (total, taken, free), the waiting count, provider dates inside the next week, open alerts, payments to verify, and open verification-code help. `GET /api/admin/waiting-line` is read-only and includes place in line. `GET /api/subscriptions/requests` uses the same numbering for the caller. `DELETE /api/subscriptions/requests/:requestId` cancels that caller's pending request. Assignment stays automatic.
+- The customer chooses manual verification or an online method (Ihella, Lumicash, Bancobu eNoti). The amount comes from the account. Manual payments, Lumicash, eNoti, and an Ihella charge that was not created wait for an admin, and every admin is emailed. A confirmed payment starts or extends that customer's month on the same seat. The Ihella client posts to `/charges` and the webhook checks an HMAC of the raw body. It does not invent a successful charge when the API is unset.
+
+### Still open
+
+Milestones 1 through 7 are in the API. Milestone 7 covers manual confirmation and gateways that wait on an admin. They count as done only after they run on a real streaming account the founder shares.
+
+- A live Ihella charge waits on API access. Manual verification does not.
+- After any payment is confirmed, BuddyPass tells the customer the seat is ready and they fetch the login. Get verification code queues one turn per account and relays the inbox code into the app. A real code still needs the mailbox to receive that streaming login address. See [After payment is confirmed](#after-payment-is-confirmed).
+- Saved payment methods and automatic monthly charging are not built. That idea is still unversioned.
+- WhatsApp, other people owning subscriptions, and one catalog across owners are not started.
+
+### Milestone status
+
+| Milestone | Status |
+| --- | --- |
+| 1. A new user can ask for a seat | In the API, including email verification, password reset, and the profile required before a request. |
+| 2. The pool is a catalog | In the API. |
+| 3. The waiting line is visible | In the API. The customer sees the same place numbers as the admin line and can cancel a pending request. |
+| 4. The login keeps working after handoff | In the API. Confirmation starts the handoff. A shared login's code is matched to the one active claim, and later taps wait in a queue. |
+| 5. A seat has a term | In the API. |
+| 6. Restock from the alert | In the API. |
+| 7. A seat is paid | In the API. Live Ihella charging waits on the real contract. |
+| 8. Other people own subscriptions | Not started. |
+| 9. The catalog lists every approved owner | Not started. |
+
+The post-confirmation handoff is in the API: a confirmed payment tells the customer the seat is ready, and Get verification code relays the inbox code to the one active claim. A live run on a real account still has to prove the seat, the month, and a code that actually arrives. WhatsApp (V1.5) and other owners wait until that run holds up.
 
 ## End state
 
@@ -111,7 +140,7 @@ The founder runs that for their own accounts first. After it is reliable, any ap
 
 ## Milestones
 
-Each milestone is done when the outcome is true on a real streaming account, not when a field exists.
+Each milestone is done when the outcome is true on a real streaming account, not when a field exists. Where the API stands against that list is in [Current state](#current-state).
 
 ### 1. A new user can ask for a seat
 
@@ -137,7 +166,7 @@ Keep reveal as it is: seat holder or admin, not cached. Add a stored record of r
 
 Outcome: a password change at the streaming service is a BuddyPass update, and a dead login is reported instead of discovered in silence.
 
-Login codes for Netflix, Prime, and similar services ship with this milestone. The approach is in [Two-factor authentication](#two-factor-authentication).
+Login codes for Netflix, Prime, and similar services ship with this milestone. A shared login is matched to the one active claim on that account. Later taps wait in a queue. The approach is in [Two-factor authentication](#two-factor-authentication).
 
 ### 5. A seat has a term
 
@@ -161,6 +190,8 @@ Outcome: holding a seat on the founder’s account costs the price on the offer,
 
 This stays inside the founder pool. It is the money model the multi-owner phase will reuse.
 
+Confirming the payment, by any method, is what starts [After payment is confirmed](#after-payment-is-confirmed). The paid flag alone does not hand over the login or the verification code.
+
 ### 8. Other people own subscriptions
 
 A subscription has an owner. The founder’s current accounts are owned by the platform admin. Another member can create a subscription they pay for, set seats, country, and price, rotate the password, pause it, and renew it. Assignment, the waiting line, reveal, incidents, and capacity alerts stay the same engine. Reveal is allowed for the seat holder, that subscription’s owner, and a platform admin. The owner sees occupants of their own accounts. They do not see other owners’ passwords.
@@ -175,23 +206,37 @@ Offers from the founder and from other owners appear in the same catalog, with t
 
 Outcome: BuddyPass is a pool of many people’s spare seats, and the founder’s accounts are one source of supply.
 
+## After payment is confirmed
+
+Added 2026-11-01. This sequence starts when a payment becomes paid. It is the same for manual verification, Ihella, Lumicash, and Bancobu eNoti. How the money was confirmed does not change what the customer receives next.
+
+1. BuddyPass gives that customer the email and password for the subscription they paid for. Credentials stay hidden until this confirmation.
+2. The customer types those credentials into the streaming service on their own device. BuddyPass does not sign them in there.
+3. Most of those services send a one-time verification code to the account email.
+4. BuddyPass reads that inbox, takes the code that service just sent, brings it into the BuddyPass app, and tells the customer, so they can type it on the device where they are signing in.
+
+Confirming a payment pushes `seat-ready` on the socket. The payload has no email and no password. The app fetches the login, and the customer types it on their own device. **Get verification code** joins a queue for that account. The first person is active and BuddyPass reads the inbox immediately. Anyone behind them sees a countdown. The words change when their turn starts. **Recheck** reads again while they are active and keeps their place while they are waiting. **I didn't get the code** tells every admin, who can type the code and send it to that customer. The matching rules are in [Two-factor authentication](#two-factor-authentication). A live code still needs the mailbox to receive the streaming login address.
+
 ## Two-factor authentication
 
-Netflix, Prime, and similar services email a one-time code to the account address. People sharing one login would otherwise share one inbox, and the code would not name who asked for it.
+Netflix, Prime, and similar services email a one-time code to the account address. People sharing one login share that address, so the message does not name which BuddyPass user asked for it. A per-seat alias cannot work on that shared login, because the service mails the account address.
 
-Each seat gets its own email alias. The alias forwards to the admin's master mailbox. The service sends the code to that alias, so the message that arrives is already that seat, and that seat is the user mid-login. BuddyPass pushes the code to them in the app. Nothing is matched or guessed.
+The identity comes from BuddyPass. **Get verification code** records who asked, on which seat, on which account. Only one claim on an account is active. BuddyPass delivers a code to that person when the message was sent to the account email, the sender's domain is one the provider allows, and the mail arrived after that turn started. A queued claim is not eligible. Later taps wait in line, see a short countdown, then different copy when their turn starts. The app does not say that someone else is signing in.
 
-A shared IMAP inbox that tries to pair a code with a user is only a fallback, for a service that will not send to a per-seat alias.
+A message addressed to the seat alias still matches that seat first. That only matters when an account's login email is unique to one seat.
 
-On the founder's accounts the mailbox is the admin's. When other people own subscriptions, a seat's alias forwards to that owner's mailbox the same way.
+On the founder's accounts the mailbox is the admin's. The streaming login address has to land in that mailbox, by plus addressing or a catch-all. BuddyPass does not create those addresses.
+
+That push is the relay in [After payment is confirmed](#after-payment-is-confirmed).
 
 ## Order
 
-1. Join, catalog, and the waiting line, so a stranger can enter the founder’s pool.
-2. Working logins, login codes, terms, and restock, so the pool survives contact with a real streaming service.
-3. Payment on founder-owned seats, in francs.
-4. WhatsApp assistant (V1.5): browse and receive services in chat, renew the monthly term, and warn before it ends.
-5. Other owners, with approval and a way to pay them.
-6. One catalog for every approved owner.
+1. Finish join and the customer's waiting line, so a stranger can enter the founder's pool. The catalog is already public.
+2. Working logins, login codes, terms, and restock are in the API. Prove them on a live account the founder shares.
+3. Payment on founder-owned seats is in the API, in francs. Manual confirmation works without Ihella. A live Ihella charge waits on API access.
+4. After any payment is confirmed, hand the customer the streaming login and relay the service's verification code from the inbox into the app. The handoff, the queue, and the admin fallback are in the API. Prove them on a live account whose mail reaches the inbox.
+5. WhatsApp assistant (V1.5): browse and receive services in chat, renew the monthly term, and warn before it ends.
+6. Other owners, with approval and a way to pay them.
+7. One catalog for every approved owner.
 
 Steps inside a milestone can ship together. Later milestones wait until the earlier outcome is true on a live account the founder actually shares.

@@ -1,7 +1,15 @@
 import { NotificationKind, NotificationStage, Prisma, PrismaClient, UserRole } from "@prisma/client";
 import { IMailer } from "../mail/smtpMailer";
+import { INotificationPublisher } from "../../realtime";
 import { ForbiddenError, NotFoundError } from "../../utils/errors";
 import { logger } from "../../utils/logger";
+
+const URGENT_KINDS: ReadonlySet<NotificationKind> = new Set([
+  "PAYMENT_TO_VERIFY",
+  "PAYMENT_CONFIRMATION",
+  "SEAT_CHANGE",
+  "LOGIN_CODE_HELP",
+]);
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -32,6 +40,32 @@ export interface INotificationService {
     subscriptionId: string;
     paymentId: string;
   }): Promise<void>;
+  notifyPaymentRejected(input: {
+    userId: string;
+    slotId: string;
+    subscriptionId: string;
+    paymentId: string;
+  }): Promise<void>;
+  notifyAdminsAboutPayment(input: {
+    body: string;
+    subject: string;
+    dedupePrefix: string;
+    paymentId: string;
+    slotId: string;
+    subscriptionId: string;
+  }): Promise<void>;
+  notifyAdminsAboutCodeHelp(input: {
+    body: string;
+    subject: string;
+    slotId: string;
+    subscriptionId: string;
+    helpId: string;
+  }): Promise<void>;
+  notifyCodeSentByAdmin(input: {
+    userId: string;
+    slotId: string;
+    subscriptionId: string;
+  }): Promise<void>;
   warnExpiries(now: Date): Promise<void>;
   listForRecipient(userId: string): Promise<NotificationView[]>;
   listAll(): Promise<NotificationView[]>;
@@ -50,6 +84,7 @@ interface NoticeInput {
   paymentId?: string;
   stage?: NotificationStage;
   dedupeKey?: string;
+  subject?: string;
 }
 
 function toView(row: {
@@ -88,7 +123,8 @@ const SEAT_COPY: Record<"assigned" | "blocked" | "freed" | "renewed", string> = 
 export class NotificationService implements INotificationService {
   constructor(
     private prisma: PrismaClient,
-    private mailer: IMailer
+    private mailer: IMailer,
+    private publisher: INotificationPublisher
   ) {}
 
   async notifySeatChange(input: {
@@ -115,10 +151,90 @@ export class NotificationService implements INotificationService {
     await this.write({
       recipientUserId: input.userId,
       kind: "PAYMENT_CONFIRMATION",
-      body: "Your payment is confirmed.",
+      body: "Your payment is confirmed. Open BuddyPass to see your login.",
       slotId: input.slotId,
       subscriptionId: input.subscriptionId,
       paymentId: input.paymentId,
+    });
+  }
+
+  async notifyPaymentRejected(input: {
+    userId: string;
+    slotId: string;
+    subscriptionId: string;
+    paymentId: string;
+  }): Promise<void> {
+    await this.write({
+      recipientUserId: input.userId,
+      kind: "PAYMENT_CONFIRMATION",
+      body: "Your payment was not confirmed. You can try again.",
+      slotId: input.slotId,
+      subscriptionId: input.subscriptionId,
+      paymentId: input.paymentId,
+    });
+  }
+
+  async notifyAdminsAboutPayment(input: {
+    body: string;
+    subject: string;
+    dedupePrefix: string;
+    paymentId: string;
+    slotId: string;
+    subscriptionId: string;
+  }): Promise<void> {
+    const admins = await this.prisma.user.findMany({
+      where: { role: "ADMIN", isActive: true },
+      select: { id: true },
+    });
+    for (const admin of admins) {
+      await this.write({
+        recipientUserId: admin.id,
+        kind: "PAYMENT_TO_VERIFY",
+        body: input.body,
+        subject: input.subject,
+        slotId: input.slotId,
+        subscriptionId: input.subscriptionId,
+        paymentId: input.paymentId,
+        dedupeKey: `${input.dedupePrefix}:${admin.id}:${input.paymentId}`,
+      });
+    }
+  }
+
+  async notifyAdminsAboutCodeHelp(input: {
+    body: string;
+    subject: string;
+    slotId: string;
+    subscriptionId: string;
+    helpId: string;
+  }): Promise<void> {
+    const admins = await this.prisma.user.findMany({
+      where: { role: "ADMIN", isActive: true },
+      select: { id: true },
+    });
+    for (const admin of admins) {
+      await this.write({
+        recipientUserId: admin.id,
+        kind: "LOGIN_CODE_HELP",
+        body: input.body,
+        subject: input.subject,
+        slotId: input.slotId,
+        subscriptionId: input.subscriptionId,
+        dedupeKey: `login-code-help:${admin.id}:${input.helpId}`,
+      });
+    }
+  }
+
+  async notifyCodeSentByAdmin(input: {
+    userId: string;
+    slotId: string;
+    subscriptionId: string;
+  }): Promise<void> {
+    await this.write({
+      recipientUserId: input.userId,
+      kind: "SEAT_CHANGE",
+      body: "Your verification code is in BuddyPass.",
+      slotId: input.slotId,
+      subscriptionId: input.subscriptionId,
     });
   }
 
@@ -242,14 +358,22 @@ export class NotificationService implements INotificationService {
           dedupeKey: input.dedupeKey,
         },
       });
+      try {
+        this.publisher.publishNotification(
+          row.recipientUserId,
+          toView(row),
+          URGENT_KINDS.has(row.kind)
+        );
+      } catch (error) {
+        logger.error({ err: error, kind: input.kind }, "Notice push failed");
+      }
       const user = await this.prisma.user.findUnique({
         where: { id: input.recipientUserId },
         select: { email: true },
       });
       if (user) {
-        await this.mailer.send(user.email, "BuddyPass", input.body);
+        await this.mailer.send(user.email, input.subject ?? "BuddyPass", input.body);
       }
-      void row;
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&

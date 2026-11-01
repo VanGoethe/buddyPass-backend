@@ -5,6 +5,7 @@ import {
 } from "@asteasolutions/zod-to-openapi";
 import { z } from "zod";
 import {
+  adminLoginCodeSchema,
   adminUpdateUserSchema,
   changePasswordSchema,
   createAdminSchema,
@@ -16,6 +17,11 @@ import {
   updateRoleSchema,
   updateStatusSchema,
   updateSubscriptionSchema,
+  paymentConfirmationSchema,
+  paymentMethodSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  verifyEmailSchema,
 } from "../types/schemas";
 
 extendZodWithOpenApi(z);
@@ -76,6 +82,15 @@ const userResponse = z
     role: z.enum(["USER", "ADMIN"]),
     isVerified: z.boolean(),
     isActive: z.boolean(),
+    phone: z.string().nullable(),
+    country: z
+      .object({ id: z.string(), name: z.string(), code: z.string() })
+      .nullable(),
+    timezone: z.string().nullable(),
+    age: z.number().int().nullable(),
+    heardAboutUs: z.string().nullable(),
+    metadata: jsonValue.nullable(),
+    profileComplete: z.boolean(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
     lastLoginAt: z.string().datetime().nullable().optional(),
@@ -96,6 +111,7 @@ const authResponse = z
     data: z.object({
       accessToken: z.string(),
       refreshToken: z.string(),
+      verificationEmailSent: z.boolean().optional(),
       user: userResponse,
     }),
   })
@@ -108,6 +124,8 @@ const serviceProvider = z
     description: z.string().nullable().optional(),
     iconUrl: z.string().nullable().optional(),
     metadata: jsonValue.nullable().optional(),
+    codeSenderDomains: z.array(z.string()).optional(),
+    codePattern: z.string().nullable().optional(),
     supportedCountries: z
       .array(
         z.object({
@@ -130,6 +148,8 @@ const createServiceProviderRequest = z
     iconUrl: z.string().optional(),
     metadata: jsonValue.optional(),
     supportedCountryIds: z.array(z.string()).optional(),
+    codeSenderDomains: z.array(z.string()).max(20).optional(),
+    codePattern: z.string().max(200).nullable().optional(),
   })
   .openapi("CreateServiceProviderRequest");
 
@@ -181,6 +201,7 @@ const subscriptionRequest = z
     assignedSlotId: z.string().nullable().optional(),
     requestedAt: z.string().datetime(),
     processedAt: z.string().datetime().nullable().optional(),
+    place: z.number().int().nullable(),
   })
   .openapi("SubscriptionRequest");
 
@@ -373,6 +394,8 @@ const adminDashboard = z
       })
     ),
     waitingCount: z.number().int(),
+    paymentsToVerify: z.number().int(),
+    codeHelpOpen: z.number().int(),
     expiringAccounts: z.array(
       z.object({
         id: z.string(),
@@ -425,6 +448,12 @@ registerBody("UpdateSubscriptionRequest", updateSubscriptionSchema);
 registerBody("UpdateUserStatusRequest", updateStatusSchema);
 registerBody("UpdateUserRoleRequest", updateRoleSchema);
 registerBody("AdminUpdateUserRequest", adminUpdateUserSchema);
+registerBody("StartPaymentRequest", paymentMethodSchema);
+registerBody("PaymentConfirmationRequest", paymentConfirmationSchema);
+registerBody("AdminLoginCodeRequest", adminLoginCodeSchema);
+registerBody("VerifyEmailRequest", verifyEmailSchema);
+registerBody("ForgotPasswordRequest", forgotPasswordSchema);
+registerBody("ResetPasswordRequest", resetPasswordSchema);
 
 registry.register("ErrorResponse", errorBody);
 registry.register("ValidationErrorResponse", validationErrorBody);

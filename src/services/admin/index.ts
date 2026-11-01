@@ -20,11 +20,14 @@ import {
   PendingRequestRow,
 } from "../../types/subscriptions";
 import { IRevealStore } from "../../repositories/reveals";
+import { IPaymentAdminSummary } from "../payments";
 import { SubscriptionRequest, SubscriptionSlot } from "../../models/subscriptions";
 import {
   NotFoundError,
   ValidationError,
 } from "../../utils/errors";
+import { numberByPool } from "../subscriptions/waitingLine";
+import { isProfileComplete } from "../users/profile";
 
 export interface AdminUserView extends UserResponse {
   lastLoginAt?: Date | null;
@@ -47,7 +50,9 @@ export class AdminService {
     private subscriptionSlotRepository: ISubscriptionSlotRepository,
     private subscriptionRequestRepository: ISubscriptionRequestRepository,
     private subscriptionService: ISubscriptionService,
-    private revealStore: IRevealStore
+    private revealStore: IRevealStore,
+    private payments: IPaymentAdminSummary,
+    private codeHelp: { countOpen(): Promise<number> }
   ) {}
 
   async createAdmin(data: {
@@ -66,6 +71,8 @@ export class AdminService {
     };
     inventory: Awaited<ReturnType<ISubscriptionRepository["inventoryByService"]>>;
     waitingCount: number;
+    paymentsToVerify: number;
+    codeHelpOpen: number;
     expiringAccounts: Awaited<ReturnType<ISubscriptionRepository["listExpiringAccounts"]>>;
     openCapacityAlerts: OpenCapacityAlertSummary;
     lastUpdated: string;
@@ -77,8 +84,10 @@ export class AdminService {
       openCapacityAlerts,
       inventory,
       waitingCount,
+      paymentsToVerify,
       expiringAccounts,
       pending,
+      codeHelpOpen,
     ] = await Promise.all([
       this.userRepository.count(),
       this.subscriptionRepository.count(),
@@ -86,13 +95,17 @@ export class AdminService {
       this.capacityForecast.getOpenAlertSummary(),
       this.subscriptionRepository.inventoryByService(),
       this.subscriptionRequestRepository.countPending(),
+      this.payments.countAwaitingAdmin(),
       this.subscriptionRepository.listExpiringAccounts(7),
       this.subscriptionRequestRepository.listPendingDetailed(),
+      this.codeHelp.countOpen(),
     ]);
     return {
       statistics: { totalUsers, totalSubscriptions, totalServiceProviders },
       inventory,
       waitingCount,
+      paymentsToVerify,
+      codeHelpOpen,
       expiringAccounts,
       openCapacityAlerts: {
         ...openCapacityAlerts,
@@ -167,11 +180,8 @@ export class AdminService {
 
   async listWaitingLine() {
     const rows = await this.subscriptionRequestRepository.listPendingDetailed();
-    const places = new Map<string, number>();
+    const places = numberByPool(rows);
     return rows.map((row) => {
-      const key = `${row.serviceProviderId}:${row.countryId ?? ""}`;
-      const place = (places.get(key) ?? 0) + 1;
-      places.set(key, place);
       return {
         id: row.id,
         userId: row.userId,
@@ -180,7 +190,7 @@ export class AdminService {
         serviceProviderName: row.serviceProviderName,
         countryId: row.countryId,
         countryName: row.countryName,
-        place,
+        place: places.get(row.id) ?? 1,
         requestedAt: row.requestedAt.toISOString(),
       };
     });
@@ -315,6 +325,13 @@ export class AdminService {
     role: UserRole;
     isVerified: boolean;
     isActive: boolean;
+    phone?: string | null;
+    countryId?: string | null;
+    country?: UserResponse["country"];
+    timezone?: string | null;
+    age?: number | null;
+    heardAboutUs?: string | null;
+    metadata?: UserResponse["metadata"];
     createdAt: Date;
     updatedAt: Date;
     lastLoginAt?: Date | null;
@@ -328,6 +345,13 @@ export class AdminService {
       role: user.role,
       isVerified: user.isVerified,
       isActive: user.isActive,
+      phone: user.phone ?? null,
+      country: user.country ?? null,
+      timezone: user.timezone ?? null,
+      age: user.age ?? null,
+      heardAboutUs: user.heardAboutUs ?? null,
+      metadata: user.metadata ?? null,
+      profileComplete: isProfileComplete(user),
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
       lastLoginAt: user.lastLoginAt,
@@ -344,7 +368,9 @@ export function createAdminService(
   subscriptionSlotRepository: ISubscriptionSlotRepository,
   subscriptionRequestRepository: ISubscriptionRequestRepository,
   subscriptionService: ISubscriptionService,
-  revealStore: IRevealStore
+  revealStore: IRevealStore,
+  payments: IPaymentAdminSummary,
+  codeHelp: { countOpen(): Promise<number> }
 ): AdminService {
   return new AdminService(
     userRepository,
@@ -355,6 +381,8 @@ export function createAdminService(
     subscriptionSlotRepository,
     subscriptionRequestRepository,
     subscriptionService,
-    revealStore
+    revealStore,
+    payments,
+    codeHelp
   );
 }

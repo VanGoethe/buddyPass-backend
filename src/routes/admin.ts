@@ -13,6 +13,9 @@ import {
   incidentListSchema,
   notificationIdSchema,
   paymentIdSchema,
+  paymentListSchema,
+  adminLoginCodeSchema,
+  loginCodeHelpListSchema,
   updateRoleSchema,
   updateStatusSchema,
   userIdSchema,
@@ -25,6 +28,7 @@ const paymentController = container.getPaymentController();
 const notificationController = container.getNotificationController();
 const incidentController = container.getIncidentController();
 const loginCodeController = container.getLoginCodeController();
+const loginCodeHelpController = container.getLoginCodeHelpController();
 
 router.use(adminRateLimiter);
 router.use(authenticateJWT);
@@ -62,6 +66,7 @@ router.post("/users", validate(createAdminSchema), adminController.createUser);
  *     description: |
  *       User, subscription, and service-provider counts, plus open capacity alerts.
  *       The alert list is the newest ten. `openCapacityAlerts.count` is the full open total.
+ *       `paymentsToVerify` counts payments an admin still has to confirm.
  *     tags: [Admin]
  *     security:
  *       - BearerAuth: []
@@ -79,6 +84,7 @@ router.post("/users", validate(createAdminSchema), adminController.createUser);
  *                   totalUsers: 12
  *                   totalSubscriptions: 4
  *                   totalServiceProviders: 2
+ *                 paymentsToVerify: 1
  *                 openCapacityAlerts:
  *                   count: 1
  *                   alerts:
@@ -356,6 +362,9 @@ router.put(
  * /admin/notifications:
  *   get:
  *     summary: Notices the system has sent
+ *     description: |
+ *       Admins also receive `notification` on the socket, in the `user:{id}` room, when a notice is stored for them.
+ *       Connect with the access token in `auth.token`, and reload this list after reconnecting.
  *     tags: [Admin]
  *     security:
  *       - BearerAuth: []
@@ -399,17 +408,113 @@ router.get("/login-codes", loginCodeController.listUnmatched);
 
 /**
  * @swagger
- * /admin/payments:
+ * /admin/login-code-help:
  *   get:
- *     summary: Seat payments
+ *     summary: Verification codes a customer did not receive
+ *     description: Oldest first. Each row names the customer, the service, the account, and the streaming login email. It never includes the password or a code.
+ *     tags: [Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [OPEN, RESOLVED]
+ *     responses:
+ *       200:
+ *         description: Help requests
+ *       403:
+ *         description: Admin only
+ */
+router.get(
+  "/login-code-help",
+  validate(loginCodeHelpListSchema),
+  loginCodeHelpController.listHelp
+);
+
+/**
+ * @swagger
+ * /admin/slots/{slotId}/login-code:
+ *   post:
+ *     summary: Send a verification code to the seat holder
+ *     description: Stores the code, pushes it to that customer, and moves the account queue forward. The response does not include the code.
+ *     tags: [Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/AdminLoginCodeRequest'
+ *           example:
+ *             code: "482913"
+ *     responses:
+ *       201:
+ *         description: Code sent
+ *       403:
+ *         description: Admin only
+ *       409:
+ *         description: The seat is not paid
+ */
+router.post(
+  "/slots/:slotId/login-code",
+  validate(adminLoginCodeSchema),
+  loginCodeHelpController.enterCode
+);
+
+/**
+ * @swagger
+ * /admin/payments/awaiting:
+ *   get:
+ *     summary: Payments waiting for an admin
+ *     description: |
+ *       Pending manual payments, Lumicash and Bancobu eNoti payments, and Ihella payments
+ *       whose charge was not created. Each row names the person, the seat, the amount,
+ *       and when the hold or grace window would have ended.
  *     tags: [Admin]
  *     security:
  *       - BearerAuth: []
  *     responses:
  *       200:
- *         description: Payments
+ *         description: Payments an admin still has to confirm
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       403:
+ *         $ref: '#/components/responses/ForbiddenError'
  */
-router.get("/payments", paymentController.list);
+router.get("/payments/awaiting", paymentController.awaiting);
+
+/**
+ * @swagger
+ * /admin/payments:
+ *   get:
+ *     summary: Seat payments
+ *     description: Filter by verification (MANUAL or ONLINE) and status (PENDING, PAID, or FAILED).
+ *     tags: [Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: verification
+ *         schema:
+ *           type: string
+ *           enum: [MANUAL, ONLINE]
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [PENDING, PAID, FAILED]
+ *     responses:
+ *       200:
+ *         description: Payments
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       403:
+ *         $ref: '#/components/responses/ForbiddenError'
+ */
+router.get("/payments", validate(paymentListSchema), paymentController.list);
 
 /**
  * @swagger

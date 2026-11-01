@@ -19,7 +19,7 @@ export function startSlotMaintenance(): void {
 
   const inbox = async (): Promise<void> => {
     try {
-      const stored = await container.getInboxService().poll();
+      const stored = await container.getLoginCodeQueue().maintain();
       if (stored > 0) {
         logger.info({ stored }, "Login codes stored");
       }

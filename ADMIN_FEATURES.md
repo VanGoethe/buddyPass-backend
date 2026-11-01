@@ -52,9 +52,7 @@ Before payment exists, a finished customer term still releases the seat and fill
 
 ## Login codes
 
-Netflix, Prime, and similar services email a one-time code to the account address. Each seat gets its own email alias. The alias forwards to the admin's mailbox. The service sends the code to that alias, so the message that arrives is already that seat. BuddyPass shows the code to that customer, and to an admin. The real mailbox address is not shown.
-
-A shared inbox that tries to pair a code with a user is only a fallback, for a service that will not send to a per-seat alias.
+Netflix, Prime, and similar services email a one-time code to the shared account address. The customer taps Get verification code. One person per account is active at a time, and later taps wait in a queue. BuddyPass matches the message to that person by the account email, the provider's sender domains, and the time the turn started. The mailbox has to receive that login address, by plus addressing or a catch-all. BuddyPass does not create those addresses. A matched code is pushed on the socket to that paid customer. A code that matches no one is pushed to connected admins. If the customer taps I didn't get the code, an admin can type it and send it to that seat.
 
 ## Login incidents
 
@@ -62,15 +60,21 @@ A seat holder can report that the login failed. The admin sees that report on th
 
 ## Notifications
 
-A table of notices the system has sent.
+A table of notices the system has sent. Each stored notice is pushed on the socket to that person before any email goes out. Payment notices and seat changes are marked urgent. Provider and customer expiry warnings are pushed too, and marked not urgent, because they come from the hourly sweep with a day or a week of lead time.
 
-An expiry warning for the provider date goes only to the admin. An expiry warning for the customer's own date goes to that customer, about one week before and again as the date nears. A seat change is sent when a seat is assigned, blocked, freed, or renewed. A payment confirmation is sent once payments exist and a payment is recorded as paid.
+An expiry warning for the provider date goes only to the admin. An expiry warning for the customer's own date goes to that customer, about one week before and again as the date nears. A seat change is sent when a seat is assigned, blocked, freed, or renewed. A payment confirmation is sent once payments exist and a payment is recorded as paid. A client reconnects with a fresh access token and reloads its notice list. The socket does not replay what was missed.
 
 ## Payments
 
-This comes after the founder pool holds up. Charging a seat is not part of assignment. The seat stays while the term is paid. An unpaid or ended term releases it back to the line.
+This comes after the founder pool holds up. Charging a seat is not part of assignment. The seat stays while the term is paid. An unpaid or ended term releases it back to the line. A payment that is waiting for the admin keeps the seat past that timer until the admin confirms or rejects it.
 
-Ihella is the first route. Lumicash is the secondary route. Bancobu eNoti is a later method on the same Ihella path, not a separate first integration. Where that API can charge on its own, confirmation is automatic. Where it cannot, BuddyPass tells the admin that a customer wants to pay by that method, and the admin completes it with the customer. Credentials stay hidden until the payment is confirmed.
+The customer chooses manual verification or an online payment.
+
+Manual verification is the person-to-person path. The customer pays the admin directly and can send a short confirmation note. BuddyPass emails every admin that this person wants manual verification. The first note emails them again. The admin confirms the payment, the paid month starts, and the login opens. Rejecting it tells the customer they can try again.
+
+Online payment is the gateway add-on. Ihella confirms itself when its API is configured. Lumicash and Bancobu eNoti, and an Ihella charge that was not created, wait for the admin. BuddyPass emails the admin for every payment they still have to confirm. A created Ihella charge does not.
+
+Paid payments stay in those two categories, manual or online, including an online payment the admin confirmed by hand. The admin can list them separately. The notice is pushed on the socket as soon as it is stored, and emailed when SMTP is set. WhatsApp, or any later channel, delivers the same stored notice.
 
 ## Later
 

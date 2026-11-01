@@ -17,6 +17,11 @@ enum UserRole {
   ADMIN
 }
 
+enum AuthTokenPurpose {
+  VERIFY_EMAIL
+  RESET_PASSWORD
+}
+
 model User {
   id          String        @id @default(cuid())
   email       String        @unique
@@ -28,18 +33,29 @@ model User {
   role        UserRole      @default(USER)
   isVerified  Boolean       @default(false)
   isActive    Boolean       @default(true)
+  phone       String?
+  countryId   String?
+  timezone    String?
+  age         Int?
+  heardAboutUs String?
+  metadata    Json?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
   lastLoginAt DateTime?
 
+  country              Country?      @relation(fields: [countryId], references: [id], onDelete: SetNull)
   refreshTokens        RefreshToken[]
+  authTokens           AuthToken[]
   subscriptionSlots    SubscriptionSlot[]
   subscriptionRequests SubscriptionRequest[]
   credentialReveals    CredentialReveal[]
   loginIncidents       LoginIncident[]
   notifications        Notification[]
   payments             Payment[]
+  loginCodeClaims      LoginCodeClaim[]
+  loginCodeHelps       LoginCodeHelp[]
 
+  @@index([countryId])
   @@map("users")
 }
 
@@ -56,6 +72,20 @@ model RefreshToken {
   @@index([familyId])
   @@index([userId])
   @@map("refresh_tokens")
+}
+
+model AuthToken {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose   AuthTokenPurpose
+  tokenHash String           @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  @@index([userId, purpose])
+  @@map("auth_tokens")
 }
 
 model Currency {
@@ -90,6 +120,7 @@ model Country {
   updatedAt   DateTime @updatedAt
 
   currency             Currency?                @relation(fields: [currencyId], references: [id], onDelete: SetNull)
+  users                User[]
   serviceProviders     ServiceProviderCountry[]
   subscriptions        Subscription[]
   subscriptionRequests SubscriptionRequest[]
@@ -103,9 +134,11 @@ model ServiceProvider {
   id          String   @id @default(cuid())
   name        String   @unique
   description String?
-  iconUrl     String?
-  metadata    Json?
-  createdAt   DateTime @default(now())
+  iconUrl            String?
+  metadata           Json?
+  codeSenderDomains  String[] @default([])
+  codePattern        String?
+  createdAt          DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   subscriptions        Subscription[]
@@ -160,6 +193,8 @@ model Subscription {
   credentialReveals CredentialReveal[]
   loginIncidents    LoginIncident[]
   payments          Payment[]
+  loginCodeClaims   LoginCodeClaim[]
+  loginCodeHelps    LoginCodeHelp[]
 
   @@index([serviceProviderId, countryId, isActive])
   @@index([currencyId])
@@ -194,6 +229,8 @@ model SubscriptionSlot {
   loginCodes        LoginCode[]
   loginIncidents    LoginIncident[]
   payments          Payment[]
+  loginCodeClaims   LoginCodeClaim[]
+  loginCodeHelps    LoginCodeHelp[]
 
   @@index([subscriptionId, isActive])
   @@index([userId])
@@ -280,18 +317,84 @@ model CredentialReveal {
   @@map("credential_reveals")
 }
 
+enum LoginCodeSource {
+  INBOX
+  ADMIN
+}
+
+enum LoginCodeClaimStatus {
+  QUEUED
+  ACTIVE
+  MATCHED
+  EXPIRED
+}
+
+model LoginCodeClaim {
+  id             String               @id @default(cuid())
+  slotId         String
+  userId         String
+  subscriptionId String
+  status         LoginCodeClaimStatus
+  openedAt       DateTime             @default(now())
+  activatedAt    DateTime?
+  expiresAt      DateTime?
+  closedAt       DateTime?
+  openAccountKey String?              @unique
+
+  slot         SubscriptionSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscription     @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  loginCodes   LoginCode[]
+  helpRequests LoginCodeHelp[]
+
+  @@index([subscriptionId, status, openedAt])
+  @@index([status, expiresAt])
+  @@index([slotId, status])
+  @@map("login_code_claims")
+}
+
 model LoginCode {
-  id         String   @id @default(cuid())
+  id         String          @id @default(cuid())
   slotId     String?
+  claimId    String?
   alias      String
   code       String
-  receivedAt DateTime @default(now())
+  source     LoginCodeSource @default(INBOX)
+  receivedAt DateTime        @default(now())
 
-  slot SubscriptionSlot? @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  slot  SubscriptionSlot? @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  claim LoginCodeClaim?   @relation(fields: [claimId], references: [id], onDelete: SetNull)
 
   @@index([slotId, receivedAt])
   @@index([receivedAt])
   @@map("login_codes")
+}
+
+enum LoginCodeHelpStatus {
+  OPEN
+  RESOLVED
+}
+
+model LoginCodeHelp {
+  id               String              @id @default(cuid())
+  slotId           String
+  userId           String
+  subscriptionId   String
+  claimId          String?
+  status           LoginCodeHelpStatus @default(OPEN)
+  createdAt        DateTime            @default(now())
+  resolvedAt       DateTime?
+  resolvedBy       LoginCodeSource?
+  resolvedByUserId String?
+  openSlotKey      String?             @unique
+
+  slot         SubscriptionSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscription     @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  claim        LoginCodeClaim?  @relation(fields: [claimId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@map("login_code_help")
 }
 
 enum IncidentStatus {
@@ -324,6 +427,8 @@ enum NotificationKind {
   SEAT_EXPIRY
   SEAT_CHANGE
   PAYMENT_CONFIRMATION
+  PAYMENT_TO_VERIFY
+  LOGIN_CODE_HELP
 }
 
 enum NotificationStage {
@@ -364,20 +469,27 @@ enum PaymentStatus {
   FAILED
 }
 
+enum PaymentVerification {
+  MANUAL
+  ONLINE
+}
+
 model Payment {
-  id                   String        @id @default(cuid())
+  id                   String              @id @default(cuid())
   userId               String
   slotId               String
   subscriptionId       String
   amount               Decimal
   currencyId           String
-  method               PaymentMethod
-  status               PaymentStatus @default(PENDING)
-  providerRef          String?       @unique
+  verification         PaymentVerification @default(ONLINE)
+  method               PaymentMethod?
+  confirmationNote     String?
+  status               PaymentStatus       @default(PENDING)
+  providerRef          String?             @unique
   paidAt               DateTime?
-  settledAfterRelease  Boolean       @default(false)
-  createdAt            DateTime      @default(now())
-  updatedAt            DateTime      @updatedAt
+  settledAfterRelease  Boolean             @default(false)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
 
   user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   slot         SubscriptionSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
@@ -386,5 +498,6 @@ model Payment {
 
   @@index([slotId, status])
   @@index([status, createdAt])
+  @@index([verification, status])
   @@map("payments")
 }

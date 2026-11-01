@@ -48,6 +48,18 @@ export class UnauthorizedError extends AppError {
   }
 }
 
+export class MailUnavailableError extends AppError {
+  constructor(message = "Email could not be sent") {
+    super("MAIL_UNAVAILABLE", message, 503);
+  }
+}
+
+export class InboxUnavailableError extends AppError {
+  constructor(message = "The verification inbox is not configured") {
+    super("INBOX_UNAVAILABLE", message, 503);
+  }
+}
+
 export class ForbiddenError extends AppError {
   constructor(message = "You do not have permission to do that", code = "FORBIDDEN") {
     super(code, message, 403);

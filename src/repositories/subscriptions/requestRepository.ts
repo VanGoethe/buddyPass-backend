@@ -101,7 +101,7 @@ export class PrismaSubscriptionRequestRepository
   async listPendingDetailed() {
     const rows = await this.prisma.subscriptionRequest.findMany({
       where: { status: "PENDING" },
-      orderBy: { requestedAt: "asc" },
+      orderBy: [{ requestedAt: "asc" }, { id: "asc" }],
       include: {
         user: { select: { name: true } },
         serviceProvider: { select: { name: true } },
@@ -118,5 +118,28 @@ export class PrismaSubscriptionRequestRepository
       countryName: row.country?.name ?? null,
       requestedAt: row.requestedAt,
     }));
+  }
+
+  async listPendingOrder(serviceProviderId: string, countryId?: string | null) {
+    return this.prisma.subscriptionRequest.findMany({
+      where: {
+        status: "PENDING",
+        serviceProviderId,
+        countryId: countryId ?? null,
+      },
+      orderBy: [{ requestedAt: "asc" }, { id: "asc" }],
+      select: { id: true, userId: true },
+    });
+  }
+
+  async cancelIfPending(id: string): Promise<ISubscriptionRequest | null> {
+    const updated = await this.prisma.subscriptionRequest.updateMany({
+      where: { id, status: "PENDING" },
+      data: { status: "CANCELLED", processedAt: new Date() },
+    });
+    if (updated.count !== 1) {
+      return null;
+    }
+    return this.findById(id);
   }
 }

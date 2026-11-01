@@ -334,6 +334,7 @@ export class SubscriptionRequest implements ISubscriptionRequest {
       assignedSlotId: this.assignedSlotId,
       requestedAt: this.requestedAt.toISOString(),
       processedAt: this.processedAt?.toISOString() || null,
+      place: null,
       metadata: this.metadata,
       createdAt: this.createdAt.toISOString(),
       updatedAt: this.updatedAt.toISOString(),

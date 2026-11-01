@@ -12,6 +12,8 @@ export interface IServiceProvider {
   description?: string | null;
   iconUrl?: string | null;
   metadata?: Prisma.JsonValue | null;
+  codeSenderDomains?: string[];
+  codePattern?: string | null;
   createdAt: Date;
   updatedAt: Date;
   supportedCountries?: { country: ICountry }[];
@@ -24,6 +26,8 @@ export interface CreateServiceProviderData {
   iconUrl?: string;
   metadata?: Prisma.JsonValue;
   supportedCountryIds?: string[];
+  codeSenderDomains?: string[];
+  codePattern?: string | null;
 }
 
 export interface UpdateServiceProviderData {
@@ -32,6 +36,8 @@ export interface UpdateServiceProviderData {
   iconUrl?: string | null;
   metadata?: Prisma.JsonValue;
   supportedCountryIds?: string[];
+  codeSenderDomains?: string[];
+  codePattern?: string | null;
 }
 
 // DTOs for API Responses
@@ -41,6 +47,8 @@ export interface ServiceProviderResponse {
   description?: string | null;
   iconUrl?: string | null;
   metadata?: Prisma.JsonValue | null;
+  codeSenderDomains?: string[];
+  codePattern?: string | null;
   supportedCountries?: Array<{
     id: string;
     name: string;

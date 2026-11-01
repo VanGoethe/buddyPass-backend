@@ -8,13 +8,22 @@ import {
 } from "../../../src/utils/errors";
 
 function createPrisma(): PrismaClient {
-  return {
+  const client = {
     refreshToken: {
       create: jest.fn().mockResolvedValue({ id: "refresh-row" }),
       findUnique: jest.fn().mockResolvedValue(null),
       update: jest.fn().mockResolvedValue({}),
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
+    authToken: {
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      create: jest.fn().mockResolvedValue({ id: "auth-token" }),
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
+  };
+  return {
+    ...client,
+    $transaction: jest.fn(async (fn: (tx: typeof client) => Promise<unknown>) => fn(client)),
   } as unknown as PrismaClient;
 }
 
@@ -87,6 +96,13 @@ describe("UserService", () => {
         role: created.role,
         isVerified: true,
         isActive: true,
+        phone: null,
+        country: null,
+        timezone: null,
+        age: null,
+        heardAboutUs: null,
+        metadata: null,
+        profileComplete: false,
         createdAt: created.createdAt,
         updatedAt: created.updatedAt,
       });

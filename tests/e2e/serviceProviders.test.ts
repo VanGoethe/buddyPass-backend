@@ -91,6 +91,8 @@ describe("ServiceProvider E2E Tests", () => {
               website: "https://disneyplus.com",
               subscriptionTypes: ["Monthly", "Annual"],
             },
+            codeSenderDomains: [],
+            codePattern: null,
             supportedCountries: [],
             createdAt: expect.any(String),
             updatedAt: expect.any(String),

@@ -21,4 +21,14 @@ describe("parseLoginMessage", () => {
     expect(parsed.alias).toBeNull();
     expect(parsed.code).toBe("1234");
   });
+
+  it("prefers a number on a line that mentions code", () => {
+    const parsed = parseLoginMessage({
+      to: [],
+      deliveredTo: [],
+      text: "Order 999999\nYour code is 482913",
+      domain: "codes.example",
+    });
+    expect(parsed.code).toBe("482913");
+  });
 });

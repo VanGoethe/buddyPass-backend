@@ -1,0 +1,22 @@
+---
+description: Layering, TypeScript, and errors in the BuddyPass API
+globs: src/**/*.ts
+alwaysApply: false
+---
+
+# Architecture
+
+Flow is controller, then service, then repository. Prisma stays inside repositories. Wire dependencies in `src/container.ts`. A controller does not call a repository.
+
+```
+src/
+  controllers/  services/  repositories/  models/  types/
+  middleware/  routes/  config/  utils/  jobs/  realtime/
+```
+
+- `strict` TypeScript. Use `unknown` instead of `any`.
+- Contract interfaces keep the `I` prefix (`IUserService`). Follow existing DTO names in `src/types`.
+- Files are camelCase, classes PascalCase, constants `SCREAMING_SNAKE_CASE`.
+- Throw `AppError` subclasses from `src/utils/errors.ts`. The error middleware returns `{ success: false, error: { code, message, details? } }`.
+- Log with `logger` from `src/utils/logger.ts`. Do not log passwords, tokens, ciphertext, or mailbox credentials.
+- Validate env in `src/config/env.ts`. Add new variables there and in `env.example`. Do not hard-code secrets.

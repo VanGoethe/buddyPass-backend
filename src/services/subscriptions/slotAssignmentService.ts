@@ -8,6 +8,7 @@ import {
   SlotCandidate,
 } from "../../types/subscriptions";
 import { INotificationService } from "../notifications";
+import { waitsForAdminWhere } from "../payments/choice";
 import { logger } from "../../utils/logger";
 
 const MAX_ATTEMPTS = 8;
@@ -123,12 +124,14 @@ export class SlotAssignmentService implements ISlotAssignmentService {
     const graceBefore = new Date(
       now.getTime() - env.SEAT_BLOCK_GRACE_DAYS * 24 * 60 * 60 * 1000
     );
+    const heldForAdmin = { payments: { none: waitsForAdminWhere() } };
     const releasedHolds = await this.releaseMatching(
       {
         access: "AWAITING_PAYMENT",
         isActive: true,
         releasedAt: null,
         assignedAt: { lte: holdBefore },
+        ...heldForAdmin,
       },
       "freed"
     );
@@ -168,6 +171,7 @@ export class SlotAssignmentService implements ISlotAssignmentService {
         isActive: true,
         releasedAt: null,
         blockedAt: { lte: graceBefore },
+        payments: { none: waitsForAdminWhere() },
       },
       "freed"
     );

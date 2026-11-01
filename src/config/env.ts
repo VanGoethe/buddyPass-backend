@@ -56,11 +56,16 @@ const envSchema = z.object({
   IMAP_PORT: optionalPort,
   IMAP_USER: optionalText,
   IMAP_PASSWORD: optionalText,
+  LOGIN_CODE_WATCH_SECONDS: z.coerce.number().int().positive().default(300),
+  LOGIN_CODE_WATCH_INTERVAL_SECONDS: z.coerce.number().int().positive().default(5),
+  LOGIN_CODE_CLOCK_SKEW_SECONDS: z.coerce.number().int().nonnegative().default(30),
+  LOGIN_CODE_TURN_ESTIMATE_SECONDS: z.coerce.number().int().positive().default(45),
   SMTP_HOST: optionalText,
   SMTP_PORT: optionalPort,
   SMTP_USER: optionalText,
   SMTP_PASSWORD: optionalText,
   SMTP_FROM: optionalText,
+  APP_PUBLIC_URL: optionalText,
   IHELLA_API_BASE_URL: optionalText,
   IHELLA_API_KEY: optionalText,
   IHELLA_WEBHOOK_SECRET: optionalText,
@@ -84,7 +89,11 @@ function loadEnv(): Env {
     );
   }
 
-  return parsed.data;
+  const firstOrigin = parsed.data.CORS_ORIGIN.split(",")[0]?.trim() || "http://localhost:3000";
+  return {
+    ...parsed.data,
+    APP_PUBLIC_URL: parsed.data.APP_PUBLIC_URL ?? firstOrigin,
+  };
 }
 
 export const env: Env = loadEnv();

@@ -143,6 +143,23 @@ export class SubscriptionController {
     }
   };
 
+  cancelRequest = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      if (!req.user) throw new UnauthorizedError();
+      const request = await this.subscriptionService.cancelRequest(
+        req.params.requestId,
+        req.user.id
+      );
+      sendSuccess(res, { request }, "Request cancelled");
+    } catch (error) {
+      next(error);
+    }
+  };
+
   listMyRequests = async (
     req: Request,
     res: Response,

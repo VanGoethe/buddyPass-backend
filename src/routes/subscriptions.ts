@@ -7,6 +7,7 @@ import { container } from "../container";
 import {
   authenticateJWT,
   requireAdmin,
+  requireCompleteProfile,
   requireVerified,
 } from "../middleware/auth";
 import { validate } from "../middleware/validate";
@@ -16,7 +17,9 @@ import {
   idParamSchema,
   listSubscriptionsSchema,
   incidentNoteSchema,
+  paymentConfirmationSchema,
   paymentMethodSchema,
+  requestIdSchema,
   slotIdSchema,
   slotRequestSchema,
   updateSubscriptionSchema,
@@ -25,6 +28,7 @@ import {
 const router = Router();
 const subscriptionController = container.getSubscriptionController();
 const paymentController = container.getPaymentController();
+const loginCodeHelpController = container.getLoginCodeHelpController();
 
 /**
  * @swagger
@@ -126,6 +130,7 @@ router.post(
   "/request",
   authenticateJWT,
   requireVerified,
+  requireCompleteProfile,
   validate(slotRequestSchema),
   subscriptionController.requestSubscriptionSlot
 );
@@ -182,7 +187,50 @@ router.post(
  */
 router.get("/my-slots", authenticateJWT, subscriptionController.getUserSubscriptionSlots);
 
+/**
+ * @swagger
+ * /subscriptions/requests:
+ *   get:
+ *     summary: List the caller's seat requests
+ *     description: A pending request includes its place in that provider and country line.
+ *     tags: [Subscriptions]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Seat requests
+ */
 router.get("/requests", authenticateJWT, subscriptionController.listMyRequests);
+
+/**
+ * @swagger
+ * /subscriptions/requests/{requestId}:
+ *   delete:
+ *     summary: Cancel a pending seat request
+ *     description: Only the owner can cancel, and only while the request is still pending.
+ *     tags: [Subscriptions]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: requestId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Request cancelled
+ *       404:
+ *         description: Request not found
+ *       409:
+ *         description: Request is no longer pending
+ */
+router.delete(
+  "/requests/:requestId",
+  authenticateJWT,
+  validate(requestIdSchema),
+  subscriptionController.cancelRequest
+);
 
 router.get(
   "/slots/:slotId/credentials",
@@ -204,21 +252,75 @@ router.delete(
  * /subscriptions/slots/{slotId}/payments:
  *   post:
  *     summary: Start a seat payment
- *     description: Amount and currency come from the account. A pending payment is returned if one already exists.
+ *     description: |
+ *       The customer chooses manual verification or an online gateway.
+ *       Amount and currency come from the account.
+ *       A body with only `method` is an online payment.
+ *       Starting the same choice again returns the pending payment.
+ *       Starting the other choice replaces that pending payment, unless an Ihella charge is already open.
  *     tags: [Payments]
  *     security:
  *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/StartPaymentRequest'
+ *           examples:
+ *             manual:
+ *               value:
+ *                 verification: MANUAL
+ *                 confirmationNote: "Lumicash TX-100"
+ *             online:
+ *               value:
+ *                 verification: ONLINE
+ *                 method: LUMICASH
  *     responses:
  *       201:
  *         description: Payment recorded
  *       409:
- *         description: The account has no seat price
+ *         description: The account has no seat price, or an Ihella charge is already open
  */
 router.post(
   "/slots/:slotId/payments",
   authenticateJWT,
   validate(paymentMethodSchema),
   paymentController.create
+);
+
+/**
+ * @swagger
+ * /subscriptions/payments/{paymentId}/confirmation:
+ *   put:
+ *     summary: Send confirmation for a manual payment
+ *     description: |
+ *       The seat holder adds the note that says they have paid.
+ *       The first note emails every admin. Later edits do not.
+ *     tags: [Payments]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/PaymentConfirmationRequest'
+ *           example:
+ *             confirmationNote: "Lumicash TX-100"
+ *     responses:
+ *       200:
+ *         description: Confirmation saved
+ *       403:
+ *         $ref: '#/components/responses/ForbiddenError'
+ *       409:
+ *         description: The payment is not a pending manual payment
+ */
+router.put(
+  "/payments/:paymentId/confirmation",
+  authenticateJWT,
+  validate(paymentConfirmationSchema),
+  paymentController.setConfirmation
 );
 
 /**
@@ -240,6 +342,66 @@ router.get(
   credentialRevealRateLimiter,
   validate(slotIdSchema),
   subscriptionController.getLoginCode
+);
+
+/**
+ * @swagger
+ * /subscriptions/slots/{slotId}/login-code/request:
+ *   post:
+ *     summary: Get a verification code
+ *     description: |
+ *       Joins the queue for this account. The first request is active and the inbox is read immediately.
+ *       Later requests wait. The response is 202 with `phase` `active` or `queued`, a `position`, and
+ *       `estimatedStartAt` while queued. It never says that another member is signing in.
+ *       Recheck calls this same route. An active claim extends its window. A queued claim keeps its place.
+ *     tags: [Subscriptions]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       202:
+ *         description: The request is active or queued
+ *       403:
+ *         description: The seat is not paid
+ *       404:
+ *         description: Slot not found
+ *       503:
+ *         description: The verification inbox is not configured
+ */
+router.post(
+  "/slots/:slotId/login-code/request",
+  authenticateJWT,
+  credentialRevealRateLimiter,
+  validate(slotIdSchema),
+  loginCodeHelpController.requestCode
+);
+
+/**
+ * @swagger
+ * /subscriptions/slots/{slotId}/login-code/help:
+ *   post:
+ *     summary: I didn't get the code
+ *     description: |
+ *       Opens one help request for this seat and tells every admin.
+ *       A second tap returns the request that is already open.
+ *     tags: [Subscriptions]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       201:
+ *         description: Admins have been told
+ *       200:
+ *         description: A help request is already open
+ *       403:
+ *         description: The seat is not paid
+ *       404:
+ *         description: Slot not found
+ */
+router.post(
+  "/slots/:slotId/login-code/help",
+  authenticateJWT,
+  credentialRevealRateLimiter,
+  validate(slotIdSchema),
+  loginCodeHelpController.requestHelp
 );
 
 /**

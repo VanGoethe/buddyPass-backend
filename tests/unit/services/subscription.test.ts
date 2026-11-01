@@ -81,6 +81,8 @@ describe("SubscriptionService", () => {
     update: jest.fn(),
     countPending: jest.fn(),
     listPendingDetailed: jest.fn(),
+    listPendingOrder: jest.fn(),
+    cancelIfPending: jest.fn(),
   };
   const serviceProviderRepository: jest.Mocked<IServiceProviderRepository> = {
     create: jest.fn(),

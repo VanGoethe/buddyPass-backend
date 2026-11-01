@@ -34,6 +34,7 @@ import {
   ValidationError,
 } from "../../utils/errors";
 import { logger } from "../../utils/logger";
+import { numberByPool } from "./waitingLine";
 
 export class SubscriptionService implements ISubscriptionService {
   constructor(
@@ -234,7 +235,7 @@ export class SubscriptionService implements ISubscriptionService {
       processedAt: assignment.slotAssignment ? new Date() : undefined,
     });
     await this.refreshCapacity(data.serviceProviderId);
-    return new SubscriptionRequest(request).toResponse();
+    return this.withPlace(new SubscriptionRequest(request).toResponse());
   }
 
   async getUserSubscriptionSlots(
@@ -246,7 +247,81 @@ export class SubscriptionService implements ISubscriptionService {
 
   async listMyRequests(userId: string): Promise<SubscriptionRequestResponse[]> {
     const requests = await this.subscriptionRequestRepository.findByUserId(userId);
-    return requests.map((request) => new SubscriptionRequest(request).toResponse());
+    const responses = requests.map((request) => new SubscriptionRequest(request).toResponse());
+    const pendingPools = new Map<string, { serviceProviderId: string; countryId: string | null }>();
+    for (const response of responses) {
+      if (response.status !== SubscriptionRequestStatus.PENDING) {
+        continue;
+      }
+      const key = `${response.serviceProviderId}:${response.countryId ?? ""}`;
+      pendingPools.set(key, {
+        serviceProviderId: response.serviceProviderId,
+        countryId: response.countryId ?? null,
+      });
+    }
+    const places = new Map<string, number>();
+    for (const pool of pendingPools.values()) {
+      const ordered = await this.subscriptionRequestRepository.listPendingOrder(
+        pool.serviceProviderId,
+        pool.countryId
+      );
+      const numbered = numberByPool(
+        ordered.map((row) => ({
+          id: row.id,
+          serviceProviderId: pool.serviceProviderId,
+          countryId: pool.countryId,
+        }))
+      );
+      for (const [id, place] of numbered) {
+        places.set(id, place);
+      }
+    }
+    return responses.map((response) => ({
+      ...response,
+      place:
+        response.status === SubscriptionRequestStatus.PENDING
+          ? (places.get(response.id) ?? null)
+          : null,
+    }));
+  }
+
+  async cancelRequest(
+    requestId: string,
+    userId: string
+  ): Promise<SubscriptionRequestResponse> {
+    const existing = await this.subscriptionRequestRepository.findById(requestId);
+    if (!existing || existing.userId !== userId) {
+      throw new NotFoundError("Request not found");
+    }
+    if (existing.status !== SubscriptionRequestStatus.PENDING) {
+      throw new ConflictError(
+        "Only a pending request can be cancelled",
+        "REQUEST_NOT_PENDING"
+      );
+    }
+    const cancelled = await this.subscriptionRequestRepository.cancelIfPending(requestId);
+    if (!cancelled) {
+      throw new ConflictError(
+        "Only a pending request can be cancelled",
+        "REQUEST_NOT_PENDING"
+      );
+    }
+    await this.refreshCapacity(existing.serviceProviderId);
+    return new SubscriptionRequest(cancelled).toResponse();
+  }
+
+  private async withPlace(
+    response: SubscriptionRequestResponse
+  ): Promise<SubscriptionRequestResponse> {
+    if (response.status !== SubscriptionRequestStatus.PENDING) {
+      return { ...response, place: null };
+    }
+    const ordered = await this.subscriptionRequestRepository.listPendingOrder(
+      response.serviceProviderId,
+      response.countryId
+    );
+    const index = ordered.findIndex((row) => row.id === response.id);
+    return { ...response, place: index === -1 ? null : index + 1 };
   }
 
   async revealCredentials(

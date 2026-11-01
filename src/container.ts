@@ -61,11 +61,16 @@ import { SmtpMailer } from "./services/mail/smtpMailer";
 import { NotificationService } from "./services/notifications";
 import { HttpIhellaClient } from "./services/payments/ihellaClient";
 import { PaymentService } from "./services/payments";
+import { SeatHandoff } from "./services/payments/afterConfirmation";
 import { PaymentController } from "./controllers/payments";
 import { PrismaRevealStore } from "./repositories/reveals";
 import { ImapInboxClient } from "./services/inbox/imapInboxClient";
 import { InboxService } from "./services/inbox";
 import { IncidentService } from "./services/incidents";
+import { NotificationPublisher } from "./realtime";
+import { LoginCodeQueue } from "./services/loginCodes";
+import { LoginCodeHelpService } from "./services/loginCodeHelp";
+import { LoginCodeHelpController } from "./controllers/loginCodeHelp";
 import {
   IncidentController,
   LoginCodeController,
@@ -115,6 +120,10 @@ export class Container {
   private notificationController: NotificationController;
   private incidentController: IncidentController;
   private loginCodeController: LoginCodeController;
+  private loginCodeQueue: LoginCodeQueue;
+  private loginCodeHelp: LoginCodeHelpService;
+  private loginCodeHelpController: LoginCodeHelpController;
+  private notificationPublisher: NotificationPublisher;
 
   private constructor() {
     // Initialize Prisma client
@@ -132,7 +141,13 @@ export class Container {
 
     // Initialize User module
     this.userRepository = createUserRepository(this.prisma);
-    this.userService = createUserService(this.userRepository, this.prisma);
+    const mailer = new SmtpMailer();
+    this.userService = createUserService(
+      this.userRepository,
+      this.prisma,
+      mailer,
+      this.countryRepository
+    );
     this.userController = createUserController(this.userService);
 
     // Initialize ServiceProvider module
@@ -157,9 +172,11 @@ export class Container {
 
     this.capacityForecastService = new CapacityForecastService(this.prisma);
 
+    this.notificationPublisher = new NotificationPublisher();
     this.notificationService = new NotificationService(
       this.prisma,
-      new SmtpMailer()
+      mailer,
+      this.notificationPublisher
     );
     const ihella =
       env.IHELLA_API_BASE_URL && env.IHELLA_API_KEY
@@ -168,13 +185,34 @@ export class Container {
     this.paymentService = new PaymentService(
       this.prisma,
       this.notificationService,
-      ihella
+      ihella,
+      new SeatHandoff(this.prisma, this.notificationPublisher)
     );
     this.paymentController = new PaymentController(this.paymentService);
     const revealStore = new PrismaRevealStore(this.prisma);
     this.inboxService = new InboxService(
       this.prisma,
-      new ImapInboxClient()
+      new ImapInboxClient(),
+      this.notificationPublisher,
+      this.paymentService
+    );
+    this.loginCodeQueue = new LoginCodeQueue(
+      this.prisma,
+      this.inboxService,
+      this.notificationPublisher,
+      this.paymentService
+    );
+    this.inboxService.setClaims(this.loginCodeQueue);
+    this.loginCodeHelp = new LoginCodeHelpService(
+      this.prisma,
+      this.loginCodeQueue,
+      this.notificationPublisher,
+      this.notificationService,
+      this.paymentService
+    );
+    this.loginCodeHelpController = new LoginCodeHelpController(
+      this.loginCodeQueue,
+      this.loginCodeHelp
     );
     this.incidentService = new IncidentService(this.prisma);
     this.notificationController = new NotificationController(this.notificationService);
@@ -217,7 +255,9 @@ export class Container {
       this.subscriptionSlotRepository,
       this.subscriptionRequestRepository,
       this.subscriptionService,
-      revealStore
+      revealStore,
+      this.paymentService,
+      this.loginCodeHelp
     );
     this.adminController = new AdminController(this.adminService);
   }
@@ -332,6 +372,18 @@ export class Container {
 
   public getInboxService(): InboxService {
     return this.inboxService;
+  }
+
+  public getLoginCodeQueue(): LoginCodeQueue {
+    return this.loginCodeQueue;
+  }
+
+  public getLoginCodeHelpController(): LoginCodeHelpController {
+    return this.loginCodeHelpController;
+  }
+
+  public getNotificationPublisher(): NotificationPublisher {
+    return this.notificationPublisher;
   }
 
   // General getters

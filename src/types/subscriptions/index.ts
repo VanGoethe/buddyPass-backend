@@ -124,6 +124,7 @@ export interface SubscriptionRequestResponse {
   assignedSlotId?: string | null;
   requestedAt: string;
   processedAt?: string | null;
+  place: number | null;
   metadata?: Prisma.JsonValue | null;
   createdAt: string;
   updatedAt: string;
@@ -325,6 +326,11 @@ export interface ISubscriptionRequestRepository {
   ): Promise<ISubscriptionRequest>;
   countPending(): Promise<number>;
   listPendingDetailed(): Promise<PendingRequestRow[]>;
+  listPendingOrder(
+    serviceProviderId: string,
+    countryId?: string | null
+  ): Promise<{ id: string; userId: string }[]>;
+  cancelIfPending(id: string): Promise<ISubscriptionRequest | null>;
 }
 
 export interface PendingRequestRow {
@@ -365,6 +371,7 @@ export interface ISubscriptionService {
   ): Promise<SubscriptionRequestResponse>;
   getUserSubscriptionSlots(userId: string): Promise<SubscriptionSlotResponse[]>;
   listMyRequests(userId: string): Promise<SubscriptionRequestResponse[]>;
+  cancelRequest(requestId: string, userId: string): Promise<SubscriptionRequestResponse>;
   revealCredentials(
     slotId: string,
     actor: { id: string; role: UserRole }

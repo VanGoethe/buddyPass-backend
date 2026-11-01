@@ -348,4 +348,297 @@ describe("admin feature loop", () => {
       expect(renewed?.access).toBe("ACTIVE");
     })
   );
+
+  it(
+    "lets a customer choose manual verification and keeps that category after confirm",
+    withTestCleanup(async (cleanup) => {
+      const stamp = Date.now().toString();
+      const { admin, buyer, provider, country } = await stockedAccount(cleanup, stamp);
+      const assigned = await request(app)
+        .post("/api/subscriptions/request")
+        .set("Authorization", `Bearer ${signAccessToken(buyer.id)}`)
+        .send({ serviceProviderId: provider.id, countryId: country.id });
+      const slotId = assigned.body.data.request.assignedSlotId as string;
+      const started = await request(app)
+        .post(`/api/subscriptions/slots/${slotId}/payments`)
+        .set("Authorization", `Bearer ${signAccessToken(buyer.id)}`)
+        .send({ verification: "MANUAL" });
+      expect(started.status).toBe(201);
+      const paymentId = started.body.data.payment.id as string;
+      expect(started.body.data.payment.verification).toBe("MANUAL");
+      expect(started.body.data.payment.method).toBeNull();
+
+      const hidden = await request(app)
+        .get(`/api/subscriptions/slots/${slotId}/credentials`)
+        .set("Authorization", `Bearer ${signAccessToken(buyer.id)}`);
+      expect(hidden.status).toBe(403);
+
+      const noticesForAdmin = () =>
+        prisma.notification.count({
+          where: {
+            recipientUserId: admin.id,
+            paymentId,
+            kind: "PAYMENT_TO_VERIFY",
+          },
+        });
+      expect(await noticesForAdmin()).toBe(1);
+      const again = await request(app)
+        .post(`/api/subscriptions/slots/${slotId}/payments`)
+        .set("Authorization", `Bearer ${signAccessToken(buyer.id)}`)
+        .send({ verification: "MANUAL", method: "LUMICASH" });
+      expect(again.body.data.payment.id).toBe(paymentId);
+      expect(await noticesForAdmin()).toBe(1);
+
+      const noted = await request(app)
+        .put(`/api/subscriptions/payments/${paymentId}/confirmation`)
+        .set("Authorization", `Bearer ${signAccessToken(buyer.id)}`)
+        .send({ confirmationNote: "TX-100" });
+      expect(noted.status).toBe(200);
+      expect(await noticesForAdmin()).toBe(2);
+      const edited = await request(app)
+        .put(`/api/subscriptions/payments/${paymentId}/confirmation`)
+        .set("Authorization", `Bearer ${signAccessToken(buyer.id)}`)
+        .send({ confirmationNote: "TX-100 revised" });
+      expect(edited.status).toBe(200);
+      expect(await noticesForAdmin()).toBe(2);
+
+      const waiting = await request(app)
+        .get("/api/admin/payments/awaiting")
+        .set("Authorization", `Bearer ${signAccessToken(admin.id, "ADMIN")}`);
+      expect(
+        waiting.body.data.payments.some(
+          (payment: { id: string; userEmail: string; holdEndsAt: string | null }) =>
+            payment.id === paymentId &&
+            payment.userEmail === `buyer-${stamp}@example.com` &&
+            payment.holdEndsAt
+        )
+      ).toBe(true);
+
+      const denied = await request(app)
+        .post(`/api/admin/payments/${paymentId}/confirm`)
+        .set("Authorization", `Bearer ${signAccessToken(buyer.id)}`);
+      expect(denied.status).toBe(403);
+
+      const confirmed = await request(app)
+        .post(`/api/admin/payments/${paymentId}/confirm`)
+        .set("Authorization", `Bearer ${signAccessToken(admin.id, "ADMIN")}`);
+      expect(confirmed.status).toBe(200);
+      expect(confirmed.body.data.payment.verification).toBe("MANUAL");
+      expect(confirmed.body.data.payment.status).toBe("PAID");
+      const opened = await request(app)
+        .get(`/api/subscriptions/slots/${slotId}/credentials`)
+        .set("Authorization", `Bearer ${signAccessToken(buyer.id)}`);
+      expect(opened.status).toBe(200);
+      const seated = await prisma.subscriptionSlot.findUnique({ where: { id: slotId } });
+      const termEnd = seated?.termEndsAt?.toISOString();
+      const second = await request(app)
+        .post(`/api/admin/payments/${paymentId}/confirm`)
+        .set("Authorization", `Bearer ${signAccessToken(admin.id, "ADMIN")}`);
+      expect(second.status).toBe(200);
+      const still = await prisma.subscriptionSlot.findUnique({ where: { id: slotId } });
+      expect(still?.termEndsAt?.toISOString()).toBe(termEnd);
+    })
+  );
+
+  it(
+    "replaces a manual payment with an online one, and refuses to replace an open Ihella charge",
+    withTestCleanup(async (cleanup) => {
+      const stamp = Date.now().toString();
+      const { buyer, provider, country, subscription, currency } = await stockedAccount(
+        cleanup,
+        stamp
+      );
+      const assigned = await request(app)
+        .post("/api/subscriptions/request")
+        .set("Authorization", `Bearer ${signAccessToken(buyer.id)}`)
+        .send({ serviceProviderId: provider.id, countryId: country.id });
+      const slotId = assigned.body.data.request.assignedSlotId as string;
+      const manual = await request(app)
+        .post(`/api/subscriptions/slots/${slotId}/payments`)
+        .set("Authorization", `Bearer ${signAccessToken(buyer.id)}`)
+        .send({ verification: "MANUAL" });
+      const manualId = manual.body.data.payment.id as string;
+      const online = await request(app)
+        .post(`/api/subscriptions/slots/${slotId}/payments`)
+        .set("Authorization", `Bearer ${signAccessToken(buyer.id)}`)
+        .send({ verification: "ONLINE", method: "LUMICASH" });
+      expect(online.status).toBe(201);
+      expect(online.body.data.payment.verification).toBe("ONLINE");
+      expect(online.body.data.payment.method).toBe("LUMICASH");
+      const replaced = await prisma.payment.findUnique({ where: { id: manualId } });
+      expect(replaced?.status).toBe("FAILED");
+
+      const holder = await cleanup.getOrCreateTestUser(`ihella-${stamp}@example.com`);
+      const openSlot = await prisma.subscriptionSlot.create({
+        data: {
+          userId: holder.id,
+          subscriptionId: subscription.id,
+          access: "AWAITING_PAYMENT",
+          aliasLocalPart: `seatihella${stamp}`,
+        },
+      });
+      cleanup.trackSubscriptionSlot(openSlot.id);
+      const open = await prisma.payment.create({
+        data: {
+          userId: holder.id,
+          slotId: openSlot.id,
+          subscriptionId: subscription.id,
+          amount: 25000,
+          currencyId: currency.id,
+          verification: "ONLINE",
+          method: "IHELLA",
+          providerRef: `open-${stamp}`,
+        },
+      });
+      const blocked = await request(app)
+        .post(`/api/subscriptions/slots/${openSlot.id}/payments`)
+        .set("Authorization", `Bearer ${signAccessToken(holder.id)}`)
+        .send({ verification: "MANUAL" });
+      expect(blocked.status).toBe(409);
+      const untouched = await prisma.payment.findUnique({ where: { id: open.id } });
+      expect(untouched?.status).toBe("PENDING");
+    })
+  );
+
+  it(
+    "holds a seat while a manual payment waits, then frees it after the admin rejects it",
+    withTestCleanup(async (cleanup) => {
+      const stamp = Date.now().toString();
+      const { admin, buyer, subscription } = await stockedAccount(cleanup, stamp);
+      const slot = await prisma.subscriptionSlot.create({
+        data: {
+          userId: buyer.id,
+          subscriptionId: subscription.id,
+          access: "AWAITING_PAYMENT",
+          aliasLocalPart: `seathold${stamp}`,
+          assignedAt: new Date(Date.now() - 25 * 60 * 60 * 1000),
+        },
+      });
+      cleanup.trackSubscriptionSlot(slot.id);
+      const started = await request(app)
+        .post(`/api/subscriptions/slots/${slot.id}/payments`)
+        .set("Authorization", `Bearer ${signAccessToken(buyer.id)}`)
+        .send({ verification: "MANUAL" });
+      const paymentId = started.body.data.payment.id as string;
+      const sweep = new SlotAssignmentService(prisma);
+      await sweep.sweepSeatTerms();
+      const held = await prisma.subscriptionSlot.findUnique({ where: { id: slot.id } });
+      expect(held?.isActive).toBe(true);
+
+      const rejected = await request(app)
+        .put(`/api/admin/payments/${paymentId}/fail`)
+        .set("Authorization", `Bearer ${signAccessToken(admin.id, "ADMIN")}`);
+      expect(rejected.status).toBe(200);
+      await sweep.sweepSeatTerms();
+      const freed = await prisma.subscriptionSlot.findUnique({ where: { id: slot.id } });
+      expect(freed?.isActive).toBe(false);
+      const notices = await request(app)
+        .get("/api/users/notifications")
+        .set("Authorization", `Bearer ${signAccessToken(buyer.id)}`);
+      expect(
+        notices.body.data.notifications.some(
+          (notice: { body: string }) =>
+            notice.body === "Your payment was not confirmed. You can try again."
+        )
+      ).toBe(true);
+    })
+  );
+
+  it(
+    "does not confirm a manual payment after the seat was released",
+    withTestCleanup(async (cleanup) => {
+      const stamp = Date.now().toString();
+      const { admin, buyer, subscription, currency } = await stockedAccount(cleanup, stamp);
+      const slot = await prisma.subscriptionSlot.create({
+        data: {
+          userId: buyer.id,
+          subscriptionId: subscription.id,
+          access: "AWAITING_PAYMENT",
+          aliasLocalPart: `seatreleased${stamp}`,
+          isActive: false,
+          releasedAt: new Date(),
+        },
+      });
+      cleanup.trackSubscriptionSlot(slot.id);
+      const payment = await prisma.payment.create({
+        data: {
+          userId: buyer.id,
+          slotId: slot.id,
+          subscriptionId: subscription.id,
+          amount: 25000,
+          currencyId: currency.id,
+          verification: "MANUAL",
+          status: "PENDING",
+        },
+      });
+      const confirmed = await request(app)
+        .post(`/api/admin/payments/${payment.id}/confirm`)
+        .set("Authorization", `Bearer ${signAccessToken(admin.id, "ADMIN")}`);
+      expect(confirmed.status).toBe(409);
+      const pending = await prisma.payment.findUnique({ where: { id: payment.id } });
+      expect(pending?.status).toBe("PENDING");
+    })
+  );
+
+  it(
+    "lists manual and online payments separately",
+    withTestCleanup(async (cleanup) => {
+      const stamp = Date.now().toString();
+      const { admin, buyer, provider, country, subscription } = await stockedAccount(
+        cleanup,
+        stamp
+      );
+      await prisma.subscription.update({
+        where: { id: subscription.id },
+        data: { maxSlots: 2 },
+      });
+      const other = await cleanup.getOrCreateTestUser(`other-${stamp}@example.com`);
+      const first = await request(app)
+        .post("/api/subscriptions/request")
+        .set("Authorization", `Bearer ${signAccessToken(buyer.id)}`)
+        .send({ serviceProviderId: provider.id, countryId: country.id });
+      const second = await request(app)
+        .post("/api/subscriptions/request")
+        .set("Authorization", `Bearer ${signAccessToken(other.id)}`)
+        .send({ serviceProviderId: provider.id, countryId: country.id });
+      const manual = await request(app)
+        .post(`/api/subscriptions/slots/${first.body.data.request.assignedSlotId}/payments`)
+        .set("Authorization", `Bearer ${signAccessToken(buyer.id)}`)
+        .send({ verification: "MANUAL" });
+      const online = await request(app)
+        .post(`/api/subscriptions/slots/${second.body.data.request.assignedSlotId}/payments`)
+        .set("Authorization", `Bearer ${signAccessToken(other.id)}`)
+        .send({ method: "LUMICASH" });
+      expect(online.body.data.payment.verification).toBe("ONLINE");
+      const manualId = manual.body.data.payment.id as string;
+      const onlineId = online.body.data.payment.id as string;
+
+      const manualList = await request(app)
+        .get("/api/admin/payments?verification=MANUAL")
+        .set("Authorization", `Bearer ${signAccessToken(admin.id, "ADMIN")}`);
+      const onlineList = await request(app)
+        .get("/api/admin/payments?verification=ONLINE&status=PENDING")
+        .set("Authorization", `Bearer ${signAccessToken(admin.id, "ADMIN")}`);
+      const manualIds = manualList.body.data.payments.map((payment: { id: string }) => payment.id);
+      const onlineIds = onlineList.body.data.payments.map((payment: { id: string }) => payment.id);
+      expect(manualIds).toContain(manualId);
+      expect(manualIds).not.toContain(onlineId);
+      expect(onlineIds).toContain(onlineId);
+      expect(onlineIds).not.toContain(manualId);
+
+      const adminNotices = await prisma.notification.count({
+        where: { recipientUserId: admin.id, paymentId: onlineId, kind: "PAYMENT_TO_VERIFY" },
+      });
+      expect(adminNotices).toBe(1);
+      const confirmed = await request(app)
+        .post(`/api/admin/payments/${onlineId}/confirm`)
+        .set("Authorization", `Bearer ${signAccessToken(admin.id, "ADMIN")}`);
+      expect(confirmed.status).toBe(200);
+      expect(confirmed.body.data.payment.verification).toBe("ONLINE");
+      const opened = await request(app)
+        .get(`/api/subscriptions/slots/${second.body.data.request.assignedSlotId}/credentials`)
+        .set("Authorization", `Bearer ${signAccessToken(other.id)}`);
+      expect(opened.status).toBe(200);
+    })
+  );
 });

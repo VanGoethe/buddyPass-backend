@@ -1,0 +1,14 @@
+---
+description: How agents should change this repository
+alwaysApply: true
+---
+
+# Working in this repo
+
+- Read the code you will change. Match its patterns. Prefer a small edit over a new abstraction.
+- The code is the current behavior. `ROADMAP.md` is the plan. When a change makes them diverge on purpose, update the roadmap in the same change.
+- Do not commit `.env` or copy secrets into docs, tests, or logs. Values from the first git history are compromised; do not reuse them.
+- A significant change updates `CHANGELOG.md` under `Unreleased` or a version heading. Run `date` and use that `YYYY-MM-DD`. Bump `package.json` only when releasing.
+- Cover behavior you change with a test, and run the narrowest test that exercises it.
+- Stay inside the task. A founder-pool fix does not add WhatsApp, other subscription owners, or automatic renewal.
+- Comment only where the purpose is not obvious from the code.
