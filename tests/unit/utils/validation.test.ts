@@ -150,15 +150,16 @@ describe("request schemas", () => {
       expect(issues(updateProfileSchema, {})).toHaveLength(0);
     });
 
-    it("accepts a name of 1 and 50 characters", () => {
-      expect(issues(updateProfileSchema, { name: "A" })).toHaveLength(0);
+    it("accepts a name of 2 to 100 characters", () => {
+      expect(issues(updateProfileSchema, { name: "Al" })).toHaveLength(0);
       expect(
-        issues(updateProfileSchema, { name: "A".repeat(50) })
+        issues(updateProfileSchema, { name: "A".repeat(100) })
       ).toHaveLength(0);
     });
 
-    it("rejects a name longer than 50 characters", () => {
-      expect(paths(updateProfileSchema, { name: "A".repeat(51) })).toContain(
+    it("rejects a name shorter than 2 or longer than 100 characters", () => {
+      expect(paths(updateProfileSchema, { name: "A" })).toContain("body.name");
+      expect(paths(updateProfileSchema, { name: "A".repeat(101) })).toContain(
         "body.name"
       );
     });

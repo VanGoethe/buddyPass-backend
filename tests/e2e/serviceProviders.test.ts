@@ -83,6 +83,7 @@ describe("ServiceProvider E2E Tests", () => {
             name: "Test Disney+",
             description:
               "Disney streaming service with movies, shows, and original content",
+            iconUrl: null,
             metadata: {
               category: "Entertainment",
               supportedCountries: ["US", "CA", "UK", "AU"],
@@ -90,6 +91,8 @@ describe("ServiceProvider E2E Tests", () => {
               website: "https://disneyplus.com",
               subscriptionTypes: ["Monthly", "Annual"],
             },
+            codeSenderDomains: [],
+            codePattern: null,
             supportedCountries: [],
             createdAt: expect.any(String),
             updatedAt: expect.any(String),

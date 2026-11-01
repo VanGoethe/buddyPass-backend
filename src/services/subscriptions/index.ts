@@ -1,4 +1,10 @@
 import { UserRole } from "@prisma/client";
+import { ISeatAccess } from "../payments";
+import { IRevealStore } from "../../repositories/reveals";
+import { IInboxReader } from "../inbox";
+import { IncidentService, IncidentView } from "../incidents";
+import { INotificationService } from "../notifications";
+import { PublicOffer } from "../../types/subscriptions";
 import {
   CreateSubscriptionData,
   CreateSubscriptionRequestData,
@@ -16,6 +22,7 @@ import {
   SubscriptionSlotResponse,
   UpdateSubscriptionData,
 } from "../../types/subscriptions";
+import { ICapacityForecastService } from "../../types/capacity";
 import { ICountryRepository } from "../../types/countries";
 import { IServiceProviderRepository } from "../../types/serviceProviders";
 import { Subscription, SubscriptionRequest, SubscriptionSlot } from "../../models/subscriptions";
@@ -27,6 +34,7 @@ import {
   ValidationError,
 } from "../../utils/errors";
 import { logger } from "../../utils/logger";
+import { numberByPool } from "./waitingLine";
 
 export class SubscriptionService implements ISubscriptionService {
   constructor(
@@ -35,7 +43,13 @@ export class SubscriptionService implements ISubscriptionService {
     private subscriptionRequestRepository: ISubscriptionRequestRepository,
     private serviceProviderRepository: IServiceProviderRepository,
     private countryRepository: ICountryRepository,
-    private slotAssignmentService: ISlotAssignmentService
+    private slotAssignmentService: ISlotAssignmentService,
+    private capacityForecast?: ICapacityForecastService,
+    private seatAccess?: ISeatAccess,
+    private revealStore?: IRevealStore,
+    private inbox?: IInboxReader,
+    private incidents?: IncidentService,
+    private notifications?: INotificationService
   ) {}
 
   async createSubscription(
@@ -59,6 +73,7 @@ export class SubscriptionService implements ISubscriptionService {
       subscription.serviceProviderId,
       subscription.countryId
     );
+    await this.refreshCapacity(subscription.serviceProviderId);
     const refreshed = await this.subscriptionRepository.findById(subscription.id);
     return new Subscription(refreshed ?? subscription).toResponse();
   }
@@ -132,6 +147,15 @@ export class SubscriptionService implements ISubscriptionService {
         updated.countryId
       );
     }
+    const capacityChanged =
+      data.maxSlots !== undefined ||
+      data.isActive !== undefined ||
+      data.expiresAt !== undefined ||
+      data.countryId !== undefined ||
+      data.password !== undefined;
+    if (capacityChanged) {
+      await this.refreshCapacity(updated.serviceProviderId);
+    }
     const refreshed = await this.subscriptionRepository.findById(id);
     return new Subscription(refreshed ?? updated).toResponse();
   }
@@ -141,7 +165,9 @@ export class SubscriptionService implements ISubscriptionService {
     if (!subscription) {
       throw new NotFoundError("Subscription not found");
     }
+    const serviceProviderId = subscription.serviceProviderId;
     await this.subscriptionRepository.delete(id);
+    await this.refreshCapacity(serviceProviderId);
   }
 
   async getSubscriptionsByServiceProvider(
@@ -208,7 +234,8 @@ export class SubscriptionService implements ISubscriptionService {
       assignedSlotId: assignment.slotAssignment?.id,
       processedAt: assignment.slotAssignment ? new Date() : undefined,
     });
-    return new SubscriptionRequest(request).toResponse();
+    await this.refreshCapacity(data.serviceProviderId);
+    return this.withPlace(new SubscriptionRequest(request).toResponse());
   }
 
   async getUserSubscriptionSlots(
@@ -220,7 +247,81 @@ export class SubscriptionService implements ISubscriptionService {
 
   async listMyRequests(userId: string): Promise<SubscriptionRequestResponse[]> {
     const requests = await this.subscriptionRequestRepository.findByUserId(userId);
-    return requests.map((request) => new SubscriptionRequest(request).toResponse());
+    const responses = requests.map((request) => new SubscriptionRequest(request).toResponse());
+    const pendingPools = new Map<string, { serviceProviderId: string; countryId: string | null }>();
+    for (const response of responses) {
+      if (response.status !== SubscriptionRequestStatus.PENDING) {
+        continue;
+      }
+      const key = `${response.serviceProviderId}:${response.countryId ?? ""}`;
+      pendingPools.set(key, {
+        serviceProviderId: response.serviceProviderId,
+        countryId: response.countryId ?? null,
+      });
+    }
+    const places = new Map<string, number>();
+    for (const pool of pendingPools.values()) {
+      const ordered = await this.subscriptionRequestRepository.listPendingOrder(
+        pool.serviceProviderId,
+        pool.countryId
+      );
+      const numbered = numberByPool(
+        ordered.map((row) => ({
+          id: row.id,
+          serviceProviderId: pool.serviceProviderId,
+          countryId: pool.countryId,
+        }))
+      );
+      for (const [id, place] of numbered) {
+        places.set(id, place);
+      }
+    }
+    return responses.map((response) => ({
+      ...response,
+      place:
+        response.status === SubscriptionRequestStatus.PENDING
+          ? (places.get(response.id) ?? null)
+          : null,
+    }));
+  }
+
+  async cancelRequest(
+    requestId: string,
+    userId: string
+  ): Promise<SubscriptionRequestResponse> {
+    const existing = await this.subscriptionRequestRepository.findById(requestId);
+    if (!existing || existing.userId !== userId) {
+      throw new NotFoundError("Request not found");
+    }
+    if (existing.status !== SubscriptionRequestStatus.PENDING) {
+      throw new ConflictError(
+        "Only a pending request can be cancelled",
+        "REQUEST_NOT_PENDING"
+      );
+    }
+    const cancelled = await this.subscriptionRequestRepository.cancelIfPending(requestId);
+    if (!cancelled) {
+      throw new ConflictError(
+        "Only a pending request can be cancelled",
+        "REQUEST_NOT_PENDING"
+      );
+    }
+    await this.refreshCapacity(existing.serviceProviderId);
+    return new SubscriptionRequest(cancelled).toResponse();
+  }
+
+  private async withPlace(
+    response: SubscriptionRequestResponse
+  ): Promise<SubscriptionRequestResponse> {
+    if (response.status !== SubscriptionRequestStatus.PENDING) {
+      return { ...response, place: null };
+    }
+    const ordered = await this.subscriptionRequestRepository.listPendingOrder(
+      response.serviceProviderId,
+      response.countryId
+    );
+    const index = ordered.findIndex((row) => row.id === response.id);
+    return { ...response, place: index === -1 ? null : index + 1 };
   }
 
   async revealCredentials(
@@ -238,6 +339,23 @@ export class SubscriptionService implements ISubscriptionService {
         "CREDENTIALS_UNAVAILABLE"
       );
     }
+    if (actor.role !== UserRole.ADMIN) {
+      const allowed = this.seatAccess
+        ? await this.seatAccess.customerCanUseSeat(slot)
+        : false;
+      if (!allowed) {
+        throw new ForbiddenError(
+          "Credentials are available after payment is confirmed",
+          "PAYMENT_REQUIRED"
+        );
+      }
+    }
+
+    await this.revealStore?.record({
+      actorUserId: actor.id,
+      slotId,
+      subscriptionId: subscription.id,
+    });
 
     logger.info(
       { userId: actor.id, slotId, subscriptionId: subscription.id },
@@ -261,12 +379,92 @@ export class SubscriptionService implements ISubscriptionService {
   ): Promise<void> {
     const slot = await this.requireOwnedSlot(slotId, actor);
     await this.subscriptionSlotRepository.release(slot.id);
+    await this.notifications?.notifySeatChange({
+      userId: slot.userId,
+      slotId: slot.id,
+      subscriptionId: slot.subscriptionId,
+      action: "freed",
+    });
     if (slot.subscription) {
       await this.slotAssignmentService.processPending(
         slot.subscription.serviceProviderId,
         slot.subscription.countryId
       );
+      await this.refreshCapacity(slot.subscription.serviceProviderId);
     }
+  }
+
+  async listOffers(): Promise<PublicOffer[]> {
+    const rows = await this.subscriptionRepository.listOfferAccounts();
+    const groups = new Map<string, PublicOffer & { priceValue: number }>();
+    for (const row of rows) {
+      if (!row.allocatable || row.userPrice === null || !row.currencyCode) {
+        continue;
+      }
+      const key = `${row.serviceProviderId}:${row.countryId ?? ""}`;
+      const priceValue = Number(row.userPrice);
+      const free = Math.max(row.maxSlots - row.occupied, 0);
+      const current = groups.get(key);
+      if (!current) {
+        groups.set(key, {
+          serviceProviderId: row.serviceProviderId,
+          serviceProviderName: row.serviceProviderName,
+          iconUrl: row.iconUrl,
+          description: row.description,
+          countryId: row.countryId,
+          countryName: row.countryName,
+          currencyCode: row.currencyCode,
+          price: row.userPrice.toString(),
+          freeSeats: free,
+          priceValue,
+        });
+        continue;
+      }
+      current.freeSeats += free;
+      if (priceValue < current.priceValue) {
+        current.priceValue = priceValue;
+        current.price = row.userPrice.toString();
+        current.currencyCode = row.currencyCode;
+      }
+    }
+    return [...groups.values()].map(({ priceValue: _priceValue, ...offer }) => offer);
+  }
+
+  async getLoginCode(
+    slotId: string,
+    actor: { id: string; role: UserRole }
+  ): Promise<{ code: string; receivedAt: string } | null> {
+    const slot = await this.requireOwnedSlot(slotId, actor);
+    if (actor.role !== UserRole.ADMIN) {
+      const allowed = this.seatAccess
+        ? await this.seatAccess.customerCanUseSeat(slot)
+        : false;
+      if (!allowed) {
+        throw new ForbiddenError(
+          "Login codes are available after payment is confirmed",
+          "PAYMENT_REQUIRED"
+        );
+      }
+    }
+    if (!this.inbox) {
+      return null;
+    }
+    const code = await this.inbox.getRecentCode(slotId);
+    if (!code) {
+      return null;
+    }
+    return { code: code.code, receivedAt: code.receivedAt };
+  }
+
+  async reportIncident(
+    slotId: string,
+    userId: string,
+    note: string
+  ): Promise<IncidentView> {
+    if (!this.incidents) {
+      throw new ConflictError("Incidents are not available", "INCIDENTS_UNAVAILABLE");
+    }
+    return this.incidents.report(slotId, userId, note);
   }
 
   private async requireOwnedSlot(
@@ -310,6 +508,20 @@ export class SubscriptionService implements ISubscriptionService {
       );
     }
   }
+
+  private async refreshCapacity(serviceProviderId: string): Promise<void> {
+    if (!this.capacityForecast) {
+      return;
+    }
+    try {
+      await this.capacityForecast.recomputeProvider(serviceProviderId);
+    } catch (error) {
+      logger.error(
+        { err: error, serviceProviderId },
+        "Capacity forecast recompute failed"
+      );
+    }
+  }
 }
 
 export { SlotAssignmentService } from "./slotAssignmentService";
@@ -320,7 +532,8 @@ export function createSubscriptionService(
   subscriptionRequestRepository: ISubscriptionRequestRepository,
   serviceProviderRepository: IServiceProviderRepository,
   countryRepository: ICountryRepository,
-  slotAssignmentService: ISlotAssignmentService
+  slotAssignmentService: ISlotAssignmentService,
+  capacityForecast?: ICapacityForecastService
 ): ISubscriptionService {
   return new SubscriptionService(
     subscriptionRepository,
@@ -328,6 +541,7 @@ export function createSubscriptionService(
     subscriptionRequestRepository,
     serviceProviderRepository,
     countryRepository,
-    slotAssignmentService
+    slotAssignmentService,
+    capacityForecast
   );
 }

@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { UserRole } from "../types/users";
 import { logger } from "../utils/logger";
+import { missingProfileFields } from "../services/users/profile";
 
 // Lazy import container to avoid circular dependency issues during test setup
 const getContainer = () => {
@@ -20,6 +21,9 @@ declare global {
       role: UserRole;
       isVerified: boolean;
       isActive: boolean;
+      phone?: string | null;
+      countryId?: string | null;
+      profileComplete: boolean;
     }
   }
 }
@@ -102,6 +106,9 @@ export const authenticateJWT = async (
       role: user.role,
       isVerified: user.isVerified || false,
       isActive: user.isActive || true,
+      phone: user.phone,
+      countryId: user.countryId,
+      profileComplete: missingProfileFields(user).length === 0,
     };
 
     next();
@@ -152,6 +159,9 @@ export const optionalAuth = async (
           role: user.role,
           isVerified: user.isVerified || false,
           isActive: user.isActive || true,
+          phone: user.phone,
+          countryId: user.countryId,
+          profileComplete: missingProfileFields(user).length === 0,
         };
       }
     }
@@ -190,6 +200,39 @@ export const requireVerified = (
       error: {
         code: "EMAIL_NOT_VERIFIED",
         message: "Email verification required to access this resource",
+      },
+    });
+    return;
+  }
+
+  next();
+};
+
+export const requireCompleteProfile = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void => {
+  if (!req.user) {
+    res.status(401).json({
+      success: false,
+      error: {
+        code: "NOT_AUTHENTICATED",
+        message: "Authentication required",
+      },
+    });
+    return;
+  }
+
+  const missing = missingProfileFields(req.user);
+  if (missing.length > 0) {
+    res.status(403).json({
+      success: false,
+      error: {
+        code: "PROFILE_INCOMPLETE",
+        message:
+          "Complete your profile (full name, phone, country) before requesting a seat",
+        details: { missing },
       },
     });
     return;

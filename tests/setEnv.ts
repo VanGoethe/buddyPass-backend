@@ -34,3 +34,6 @@ process.env.GOOGLE_CLIENT_SECRET =
 process.env.GOOGLE_CALLBACK_URL =
   process.env.GOOGLE_CALLBACK_URL ||
   "http://localhost:3000/api/users/auth/google/callback";
+if (!process.env.IHELLA_WEBHOOK_SECRET) {
+  process.env.IHELLA_WEBHOOK_SECRET = "test-webhook-secret";
+}

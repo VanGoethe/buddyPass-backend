@@ -2,7 +2,7 @@
  * User Types and DTOs
  */
 
-import { AuthProvider, UserRole } from "@prisma/client";
+import { AuthProvider, Prisma, UserRole } from "@prisma/client";
 
 export { AuthProvider, UserRole };
 
@@ -18,6 +18,13 @@ export interface User {
   role: UserRole;
   isVerified: boolean;
   isActive: boolean;
+  phone?: string | null;
+  countryId?: string | null;
+  timezone?: string | null;
+  age?: number | null;
+  heardAboutUs?: string | null;
+  metadata?: Prisma.JsonValue | null;
+  country?: { id: string; name: string; code: string } | null;
   createdAt: Date;
   updatedAt: Date;
   lastLoginAt?: Date | null;
@@ -33,6 +40,13 @@ export interface UserResponse {
   role: UserRole;
   isVerified: boolean;
   isActive: boolean;
+  phone: string | null;
+  country: { id: string; name: string; code: string } | null;
+  timezone: string | null;
+  age: number | null;
+  heardAboutUs: string | null;
+  metadata: Prisma.JsonValue | null;
+  profileComplete: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -48,6 +62,10 @@ export interface AuthSession {
   user: UserResponse;
   accessToken: string;
   refreshToken: string;
+}
+
+export interface RegisterResult extends AuthSession {
+  verificationEmailSent: boolean;
 }
 
 export interface RegisterResponse {
@@ -88,6 +106,12 @@ export interface GetProfileResponse {
 export interface UpdateProfileRequest {
   name?: string;
   avatar?: string;
+  phone?: string;
+  countryId?: string | null;
+  timezone?: string | null;
+  age?: number | null;
+  heardAboutUs?: string | null;
+  metadata?: Prisma.InputJsonObject | null;
 }
 
 export interface UpdateProfileResponse {
@@ -172,6 +196,12 @@ export interface UpdateProfileData {
   provider?: AuthProvider;
   isVerified?: boolean;
   lastLoginAt?: Date | null;
+  phone?: string | null;
+  countryId?: string | null;
+  timezone?: string | null;
+  age?: number | null;
+  heardAboutUs?: string | null;
+  metadata?: Prisma.InputJsonValue | null;
 }
 
 export type UpdateUserData = UpdateProfileData;
@@ -209,7 +239,7 @@ export interface CountOptions {
 
 // Service interfaces
 export interface IUserService {
-  register(data: RegisterRequest): Promise<AuthSession>;
+  register(data: RegisterRequest): Promise<RegisterResult>;
   login(data: LoginRequest): Promise<AuthSession>;
   refresh(refreshToken: string): Promise<AuthSession>;
   logout(refreshToken: string): Promise<void>;
@@ -219,6 +249,10 @@ export interface IUserService {
     data: UpdateProfileRequest
   ): Promise<UserResponse>;
   changePassword(userId: string, data: ChangePasswordRequest): Promise<void>;
+  sendVerificationEmail(userId: string): Promise<void>;
+  verifyEmail(token: string): Promise<UserResponse>;
+  forgotPassword(email: string): Promise<void>;
+  resetPassword(token: string, password: string): Promise<void>;
   handleGoogleOAuth(googleUser: GoogleProfile): Promise<User>;
   issueSession(user: User): Promise<AuthSession>;
   hashPassword(password: string): Promise<string>;

@@ -1,10 +1,14 @@
 import { Prisma, PrismaClient } from "@prisma/client";
+import { env } from "../../config/env";
+import { ICapacityForecastService } from "../../types/capacity";
 import {
   ISlotAssignmentService,
   ISubscriptionSlot,
   selectSubscriptionForAllocation,
   SlotCandidate,
 } from "../../types/subscriptions";
+import { INotificationService } from "../notifications";
+import { waitsForAdminWhere } from "../payments/choice";
 import { logger } from "../../utils/logger";
 
 const MAX_ATTEMPTS = 8;
@@ -18,7 +22,11 @@ function isRetryable(error: unknown): boolean {
 }
 
 export class SlotAssignmentService implements ISlotAssignmentService {
-  constructor(private prisma: PrismaClient) {}
+  constructor(
+    private prisma: PrismaClient,
+    private capacityForecast?: ICapacityForecastService,
+    private notifications?: INotificationService
+  ) {}
 
   async assignSlotToUser(
     userId: string,
@@ -31,10 +39,19 @@ export class SlotAssignmentService implements ISlotAssignmentService {
   }> {
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
       try {
-        return await this.prisma.$transaction(
+        const result = await this.prisma.$transaction(
           (tx) => this.allocate(tx, userId, serviceProviderId, countryId),
           { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
         );
+        if (result.success && result.slotAssignment) {
+          await this.notifications?.notifySeatChange({
+            userId,
+            slotId: result.slotAssignment.id,
+            subscriptionId: result.slotAssignment.subscriptionId,
+            action: "assigned",
+          });
+        }
+        return result;
       } catch (error) {
         if (isRetryable(error) && attempt < MAX_ATTEMPTS) {
           continue;
@@ -91,39 +108,114 @@ export class SlotAssignmentService implements ISlotAssignmentService {
       });
       assigned += 1;
     }
+    await this.refreshCapacity(serviceProviderId);
     return assigned;
   }
 
-  async releaseExpiredSlots(): Promise<number> {
-    const expired = await this.prisma.subscription.findMany({
-      where: {
-        expiresAt: { lte: new Date() },
-        subscriptionSlots: { some: { isActive: true, releasedAt: null } },
+  async sweepSeatTerms(): Promise<{
+    releasedHolds: number;
+    blocked: number;
+    releasedBlocked: number;
+  }> {
+    const now = new Date();
+    const holdBefore = new Date(
+      now.getTime() - env.SEAT_PAYMENT_HOLD_HOURS * 60 * 60 * 1000
+    );
+    const graceBefore = new Date(
+      now.getTime() - env.SEAT_BLOCK_GRACE_DAYS * 24 * 60 * 60 * 1000
+    );
+    const heldForAdmin = { payments: { none: waitsForAdminWhere() } };
+    const releasedHolds = await this.releaseMatching(
+      {
+        access: "AWAITING_PAYMENT",
+        isActive: true,
+        releasedAt: null,
+        assignedAt: { lte: holdBefore },
+        ...heldForAdmin,
       },
-      select: {
-        id: true,
-        serviceProviderId: true,
-        countryId: true,
-        subscriptionSlots: {
-          where: { isActive: true, releasedAt: null },
-          select: { id: true },
+      "freed"
+    );
+    let blocked = 0;
+    try {
+      const due = await this.prisma.subscriptionSlot.findMany({
+        where: {
+          access: "ACTIVE",
+          isActive: true,
+          releasedAt: null,
+          termEndsAt: { lte: now },
         },
-      },
-    });
-
-    let released = 0;
-    for (const subscription of expired) {
-      for (const slot of subscription.subscriptionSlots) {
-        await this.prisma.subscriptionSlot.update({
-          where: { id: slot.id },
-          data: { isActive: false, releasedAt: new Date() },
-        });
-        released += 1;
+      });
+      for (const slot of due) {
+        try {
+          await this.prisma.subscriptionSlot.update({
+            where: { id: slot.id },
+            data: { access: "BLOCKED", blockedAt: now },
+          });
+          blocked += 1;
+          await this.notifications?.notifySeatChange({
+            userId: slot.userId,
+            slotId: slot.id,
+            subscriptionId: slot.subscriptionId,
+            action: "blocked",
+          });
+        } catch (error) {
+          logger.error({ err: error, slotId: slot.id }, "Seat block failed");
+        }
       }
-      await this.processPending(
-        subscription.serviceProviderId,
-        subscription.countryId
-      );
+    } catch (error) {
+      logger.error({ err: error }, "Seat block sweep failed");
+    }
+    const releasedBlocked = await this.releaseMatching(
+      {
+        access: "BLOCKED",
+        isActive: true,
+        releasedAt: null,
+        blockedAt: { lte: graceBefore },
+        payments: { none: waitsForAdminWhere() },
+      },
+      "freed"
+    );
+    try {
+      await this.notifications?.warnExpiries(now);
+    } catch (error) {
+      logger.error({ err: error }, "Expiry notice sweep failed");
+    }
+    return { releasedHolds, blocked, releasedBlocked };
+  }
+
+  private async releaseMatching(
+    where: Prisma.SubscriptionSlotWhereInput,
+    action: "freed"
+  ): Promise<number> {
+    let released = 0;
+    try {
+      const slots = await this.prisma.subscriptionSlot.findMany({
+        where,
+        include: { subscription: { select: { serviceProviderId: true, countryId: true } } },
+      });
+      for (const slot of slots) {
+        try {
+          await this.prisma.subscriptionSlot.update({
+            where: { id: slot.id },
+            data: { isActive: false, releasedAt: new Date() },
+          });
+          released += 1;
+          await this.notifications?.notifySeatChange({
+            userId: slot.userId,
+            slotId: slot.id,
+            subscriptionId: slot.subscriptionId,
+            action,
+          });
+          await this.processPending(
+            slot.subscription.serviceProviderId,
+            slot.subscription.countryId
+          );
+        } catch (error) {
+          logger.error({ err: error, slotId: slot.id }, "Seat release failed");
+        }
+      }
+    } catch (error) {
+      logger.error({ err: error }, "Seat release sweep failed");
     }
     return released;
   }
@@ -188,23 +280,51 @@ export class SlotAssignmentService implements ISlotAssignmentService {
     }
 
     const created = await tx.subscriptionSlot.create({
-      data: { userId, subscriptionId: target.id },
+      data: {
+        userId,
+        subscriptionId: target.id,
+        access: "AWAITING_PAYMENT",
+        aliasLocalPart: `tmp${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
+      },
+    });
+    const named = await tx.subscriptionSlot.update({
+      where: { id: created.id },
+      data: { aliasLocalPart: `seat${created.id}` },
       include: { subscription: { include: { country: true } } },
     });
 
     return {
       success: true,
       slotAssignment: {
-        id: created.id,
-        userId: created.userId,
-        subscriptionId: created.subscriptionId,
-        assignedAt: created.assignedAt,
-        isActive: created.isActive,
-        releasedAt: created.releasedAt,
-        createdAt: created.createdAt,
-        updatedAt: created.updatedAt,
+        id: named.id,
+        userId: named.userId,
+        subscriptionId: named.subscriptionId,
+        assignedAt: named.assignedAt,
+        isActive: named.isActive,
+        releasedAt: named.releasedAt,
+        access: named.access,
+        termStartsAt: named.termStartsAt,
+        termEndsAt: named.termEndsAt,
+        blockedAt: named.blockedAt,
+        aliasLocalPart: named.aliasLocalPart,
+        createdAt: named.createdAt,
+        updatedAt: named.updatedAt,
       },
       message: "Slot successfully assigned",
     };
+  }
+
+  private async refreshCapacity(serviceProviderId: string): Promise<void> {
+    if (!this.capacityForecast) {
+      return;
+    }
+    try {
+      await this.capacityForecast.recomputeProvider(serviceProviderId);
+    } catch (error) {
+      logger.error(
+        { err: error, serviceProviderId },
+        "Capacity forecast recompute failed"
+      );
+    }
   }
 }

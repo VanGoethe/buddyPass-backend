@@ -143,6 +143,23 @@ export class SubscriptionController {
     }
   };
 
+  cancelRequest = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      if (!req.user) throw new UnauthorizedError();
+      const request = await this.subscriptionService.cancelRequest(
+        req.params.requestId,
+        req.user.id
+      );
+      sendSuccess(res, { request }, "Request cancelled");
+    } catch (error) {
+      next(error);
+    }
+  };
+
   listMyRequests = async (
     req: Request,
     res: Response,
@@ -170,6 +187,42 @@ export class SubscriptionController {
       );
       res.set("Cache-Control", "no-store");
       sendSuccess(res, credentials);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  listOffers = async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      sendSuccess(res, { offers: await this.subscriptionService.listOffers() });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  getLoginCode = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (!req.user) throw new UnauthorizedError();
+      const loginCode = await this.subscriptionService.getLoginCode(req.params.slotId, {
+        id: req.user.id,
+        role: req.user.role as UserRole,
+      });
+      res.set("Cache-Control", "no-store");
+      sendSuccess(res, { loginCode });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  reportIncident = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      if (!req.user) throw new UnauthorizedError();
+      const incident = await this.subscriptionService.reportIncident(
+        req.params.slotId,
+        req.user.id,
+        req.body.note
+      );
+      sendSuccess(res, { incident }, "Incident reported", 201);
     } catch (error) {
       next(error);
     }

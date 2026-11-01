@@ -65,6 +65,10 @@ describe("Authentication Middleware", () => {
       comparePassword: jest.fn(),
       generateAccessToken: jest.fn(),
       createAdmin: jest.fn(),
+      sendVerificationEmail: jest.fn(),
+      verifyEmail: jest.fn(),
+      forgotPassword: jest.fn(),
+      resetPassword: jest.fn(),
     };
 
     mockUserRepository = {
@@ -97,6 +101,7 @@ describe("Authentication Middleware", () => {
         role: UserRole.USER,
         isVerified: true,
         isActive: true,
+        profileComplete: true,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -128,6 +133,9 @@ describe("Authentication Middleware", () => {
         role: mockUser.role,
         isVerified: mockUser.isVerified,
         isActive: mockUser.isActive,
+        phone: undefined,
+        countryId: undefined,
+        profileComplete: false,
       });
       expect(mockNext).toHaveBeenCalled();
     });
@@ -286,6 +294,7 @@ describe("Authentication Middleware", () => {
         role: UserRole.USER,
         isVerified: true,
         isActive: true,
+        profileComplete: true,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -351,6 +360,7 @@ describe("Authentication Middleware", () => {
         role: UserRole.USER,
         isVerified: true,
         isActive: true,
+        profileComplete: true,
       };
 
       requireVerified(mockReq as Request, mockRes as Response, mockNext);
@@ -383,6 +393,7 @@ describe("Authentication Middleware", () => {
         role: UserRole.USER,
         isVerified: false,
         isActive: true,
+        profileComplete: true,
       };
 
       requireVerified(mockReq as Request, mockRes as Response, mockNext);
@@ -410,6 +421,7 @@ describe("Authentication Middleware", () => {
         role: UserRole.USER,
         isVerified: true,
         isActive: true,
+        profileComplete: true,
       };
       mockReq.params = { userId: "user-1" };
 
@@ -429,6 +441,7 @@ describe("Authentication Middleware", () => {
         role: UserRole.USER,
         isVerified: true,
         isActive: true,
+        profileComplete: true,
       };
       mockReq.body = { userId: "user-1" };
 
@@ -448,6 +461,7 @@ describe("Authentication Middleware", () => {
         role: UserRole.USER,
         isVerified: true,
         isActive: true,
+        profileComplete: true,
       };
 
       requireOwnership(mockReq as Request, mockRes as Response, mockNext);
@@ -480,6 +494,7 @@ describe("Authentication Middleware", () => {
         role: UserRole.USER,
         isVerified: true,
         isActive: true,
+        profileComplete: true,
       };
       mockReq.params = { userId: "user-2" };
 

@@ -15,14 +15,19 @@ import {
 } from "../middleware/rateLimit";
 import {
   changePasswordSchema,
+  forgotPasswordSchema,
   loginSchema,
   refreshSchema,
   registerSchema,
+  resetPasswordSchema,
+  verifyEmailSchema,
+  notificationIdSchema,
   updateProfileSchema,
 } from "../types/schemas";
 
 const router = Router();
 const userController = container.getUserController();
+const notificationController = container.getNotificationController();
 
 /**
  * @swagger
@@ -86,6 +91,116 @@ router.post(
   validate(registerSchema),
   (req: Request, res: Response, next: NextFunction) => {
     void userController.register(req, res, next);
+  }
+);
+
+/**
+ * @swagger
+ * /users/verification-email:
+ *   post:
+ *     summary: Send another verification email
+ *     description: For a local account that is not verified yet. The link goes to the public site.
+ *     tags: [Users]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Verification email sent
+ *       409:
+ *         description: Already verified, or the account has no password
+ *       503:
+ *         description: Outbound mail is not configured
+ */
+router.post(
+  "/verification-email",
+  authenticateJWT,
+  registerRateLimiter,
+  (req: Request, res: Response, next: NextFunction) => {
+    void userController.sendVerificationEmail(req, res, next);
+  }
+);
+
+/**
+ * @swagger
+ * /users/verify-email:
+ *   post:
+ *     summary: Confirm an email address
+ *     description: Single-use token from the verification link. Does not return a new session.
+ *     tags: [Users]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/VerifyEmailRequest'
+ *     responses:
+ *       200:
+ *         description: Email verified
+ *       400:
+ *         description: Token is invalid or expired
+ */
+router.post(
+  "/verify-email",
+  registerRateLimiter,
+  validate(verifyEmailSchema),
+  (req: Request, res: Response, next: NextFunction) => {
+    void userController.verifyEmail(req, res, next);
+  }
+);
+
+/**
+ * @swagger
+ * /users/forgot-password:
+ *   post:
+ *     summary: Ask for a password reset link
+ *     description: The response is the same when the address is unknown. Returns 503 before lookup when mail is not configured.
+ *     tags: [Users]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/ForgotPasswordRequest'
+ *     responses:
+ *       200:
+ *         description: Reset message
+ *       503:
+ *         description: Outbound mail is not configured
+ */
+router.post(
+  "/forgot-password",
+  passwordChangeRateLimiter,
+  validate(forgotPasswordSchema),
+  (req: Request, res: Response, next: NextFunction) => {
+    void userController.forgotPassword(req, res, next);
+  }
+);
+
+/**
+ * @swagger
+ * /users/reset-password:
+ *   post:
+ *     summary: Set a new password from a reset link
+ *     description: Revokes every refresh token for the account. The customer logs in again.
+ *     tags: [Users]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/ResetPasswordRequest'
+ *     responses:
+ *       200:
+ *         description: Password updated
+ *       400:
+ *         description: Token is invalid or expired, or the password is too weak
+ */
+router.post(
+  "/reset-password",
+  passwordChangeRateLimiter,
+  validate(resetPasswordSchema),
+  (req: Request, res: Response, next: NextFunction) => {
+    void userController.resetPassword(req, res, next);
   }
 );
 
@@ -287,7 +402,7 @@ router.get(
  * /users/profile:
  *   put:
  *     summary: Update user profile
- *     description: Update the authenticated user's profile information (name and avatar)
+ *     description: Update name, avatar, phone, country, and optional timezone, age, heard-about, and metadata. Email is not editable here.
  *     tags: [Users]
  *     security:
  *       - BearerAuth: []
@@ -491,6 +606,44 @@ router.get(
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
+/**
+ * @swagger
+ * /users/notifications:
+ *   get:
+ *     summary: Notices for the signed-in user
+ *     description: |
+ *       Newest first. The socket on this origin emits `notification` when a notice is stored.
+ *       Connect with the access token in `auth.token`. After connecting or reconnecting, reload this list.
+ *       The event includes `urgent`. Payment and seat notices are urgent. Expiry warnings are not.
+ *       A confirmed payment emits `seat-ready` without the password. `login-code` includes `source` (`INBOX` or `ADMIN`). `login-code-status` updates a queued verification request. `login-code-missed` means that turn ended with no code. Admins receive `login-code` when a code matches no seat.
+ *     tags: [Users]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Notifications
+ */
+router.get("/notifications", authenticateJWT, notificationController.listMine);
+
+/**
+ * @swagger
+ * /users/notifications/{notificationId}/read:
+ *   put:
+ *     summary: Mark one of your notices read
+ *     tags: [Users]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Notice marked read
+ */
+router.put(
+  "/notifications/:notificationId/read",
+  authenticateJWT,
+  validate(notificationIdSchema),
+  notificationController.markRead
+);
+
 router.get(
   "/auth/google/callback",
   passport.authenticate("google", { session: false }),

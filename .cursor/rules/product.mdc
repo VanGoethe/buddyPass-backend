@@ -1,0 +1,20 @@
+---
+description: BuddyPass product invariants for the founder-operated seat pool
+alwaysApply: true
+---
+
+# Product
+
+BuddyPass sells monthly seats on streaming accounts the founder stocks. Read `ROADMAP.md` before changing assignment, payments, credentials, or terms. `USER_JOURNEY.md` is the customer flow. `ADMIN_INVENTORY.md` lists the admin API.
+
+The founder is the only supplier. Do not add subscription owners, payouts, or WhatsApp unless the task is that milestone.
+
+- Assignment is transactional and first-in, first-out. Never overbook `maxSlots`. Do not add a manual accept, reject, or assign path.
+- Provider `expiresAt` and the customer's `termStartsAt` / `termEndsAt` are different clocks. Renewing the provider date keeps current holders.
+- Streaming passwords are AES-256-GCM. Reveal them only to the paid seat holder or an admin. Send `Cache-Control: no-store`. Never log the password, ciphertext, or inbox credentials.
+- Credentials stay hidden until payment is confirmed. A payment waiting for an admin holds the seat until confirm or reject.
+- Login codes match a seat by its email alias. Do not guess which user a code belongs to.
+- The seat price comes from the account. Do not trust a client-supplied amount.
+- Ihella charges run only when its API is configured. Do not fake a successful charge.
+
+A local account verifies its own email and can reset its password when SMTP is configured. A new seat request needs that verification plus a profile with full name, phone, and country. The customer can see their place in line and cancel a pending request. Admin verification and the admin waiting line remain.

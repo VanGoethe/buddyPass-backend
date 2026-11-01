@@ -20,13 +20,22 @@ const mockJwt = jwt as jest.Mocked<typeof jwt>;
 const mockBcrypt = bcrypt as jest.Mocked<typeof bcrypt>;
 
 function createPrisma(): PrismaClient {
-  return {
+  const client = {
     refreshToken: {
       create: jest.fn().mockResolvedValue({ id: "refresh-row" }),
       findUnique: jest.fn().mockResolvedValue(null),
       update: jest.fn().mockResolvedValue({}),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
+    authToken: {
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      create: jest.fn().mockResolvedValue({ id: "auth-token" }),
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
+  };
+  return {
+    ...client,
+    $transaction: jest.fn(async (fn: (tx: typeof client) => Promise<unknown>) => fn(client)),
   } as unknown as PrismaClient;
 }
 

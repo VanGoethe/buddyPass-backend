@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { IUserService, GoogleProfile } from "../../types/users";
+import { PASSWORD_RESET_MESSAGE } from "../../services/users";
 import { sendSuccess } from "../../utils/http";
 import { UnauthorizedError } from "../../utils/errors";
 
@@ -101,6 +102,61 @@ export class UserController {
       }
       await this.userService.changePassword(req.user.id, req.body);
       sendSuccess(res, null, "Password changed successfully");
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  sendVerificationEmail = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      if (!req.user) {
+        throw new UnauthorizedError();
+      }
+      await this.userService.sendVerificationEmail(req.user.id);
+      sendSuccess(res, { sent: true });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  verifyEmail = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const user = await this.userService.verifyEmail(req.body.token);
+      sendSuccess(res, { user }, "Email verified");
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  forgotPassword = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      await this.userService.forgotPassword(req.body.email);
+      sendSuccess(res, null, PASSWORD_RESET_MESSAGE);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  resetPassword = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      await this.userService.resetPassword(req.body.token, req.body.password);
+      sendSuccess(res, null, "Password reset. Log in with the new password.");
     } catch (error) {
       next(error);
     }

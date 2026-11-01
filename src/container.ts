@@ -55,6 +55,28 @@ import { ICurrencyRepository, ICurrencyService } from "./types/currencies";
 import { CurrencyController } from "./controllers/currencies";
 import { AdminController } from "./controllers/admin";
 import { AdminService, createAdminService } from "./services/admin";
+import { CapacityForecastService } from "./services/capacity";
+import { ICapacityForecastService } from "./types/capacity";
+import { SmtpMailer } from "./services/mail/smtpMailer";
+import { NotificationService } from "./services/notifications";
+import { HttpIhellaClient } from "./services/payments/ihellaClient";
+import { PaymentService } from "./services/payments";
+import { SeatHandoff } from "./services/payments/afterConfirmation";
+import { PaymentController } from "./controllers/payments";
+import { PrismaRevealStore } from "./repositories/reveals";
+import { ImapInboxClient } from "./services/inbox/imapInboxClient";
+import { InboxService } from "./services/inbox";
+import { IncidentService } from "./services/incidents";
+import { NotificationPublisher } from "./realtime";
+import { LoginCodeQueue } from "./services/loginCodes";
+import { LoginCodeHelpService } from "./services/loginCodeHelp";
+import { LoginCodeHelpController } from "./controllers/loginCodeHelp";
+import {
+  IncidentController,
+  LoginCodeController,
+  NotificationController,
+} from "./controllers/notifications";
+import { env } from "./config/env";
 
 export class Container {
   private static instance: Container;
@@ -89,6 +111,19 @@ export class Container {
   private currencyController: CurrencyController;
   private adminService: AdminService;
   private adminController: AdminController;
+  private capacityForecastService: ICapacityForecastService;
+  private notificationService: NotificationService;
+  private paymentService: PaymentService;
+  private paymentController: PaymentController;
+  private inboxService: InboxService;
+  private incidentService: IncidentService;
+  private notificationController: NotificationController;
+  private incidentController: IncidentController;
+  private loginCodeController: LoginCodeController;
+  private loginCodeQueue: LoginCodeQueue;
+  private loginCodeHelp: LoginCodeHelpService;
+  private loginCodeHelpController: LoginCodeHelpController;
+  private notificationPublisher: NotificationPublisher;
 
   private constructor() {
     // Initialize Prisma client
@@ -106,7 +141,13 @@ export class Container {
 
     // Initialize User module
     this.userRepository = createUserRepository(this.prisma);
-    this.userService = createUserService(this.userRepository, this.prisma);
+    const mailer = new SmtpMailer();
+    this.userService = createUserService(
+      this.userRepository,
+      this.prisma,
+      mailer,
+      this.countryRepository
+    );
     this.userController = createUserController(this.userService);
 
     // Initialize ServiceProvider module
@@ -129,8 +170,61 @@ export class Container {
     this.subscriptionRequestRepository =
       new PrismaSubscriptionRequestRepository(this.prisma);
 
+    this.capacityForecastService = new CapacityForecastService(this.prisma);
+
+    this.notificationPublisher = new NotificationPublisher();
+    this.notificationService = new NotificationService(
+      this.prisma,
+      mailer,
+      this.notificationPublisher
+    );
+    const ihella =
+      env.IHELLA_API_BASE_URL && env.IHELLA_API_KEY
+        ? new HttpIhellaClient(env.IHELLA_API_BASE_URL, env.IHELLA_API_KEY)
+        : null;
+    this.paymentService = new PaymentService(
+      this.prisma,
+      this.notificationService,
+      ihella,
+      new SeatHandoff(this.prisma, this.notificationPublisher)
+    );
+    this.paymentController = new PaymentController(this.paymentService);
+    const revealStore = new PrismaRevealStore(this.prisma);
+    this.inboxService = new InboxService(
+      this.prisma,
+      new ImapInboxClient(),
+      this.notificationPublisher,
+      this.paymentService
+    );
+    this.loginCodeQueue = new LoginCodeQueue(
+      this.prisma,
+      this.inboxService,
+      this.notificationPublisher,
+      this.paymentService
+    );
+    this.inboxService.setClaims(this.loginCodeQueue);
+    this.loginCodeHelp = new LoginCodeHelpService(
+      this.prisma,
+      this.loginCodeQueue,
+      this.notificationPublisher,
+      this.notificationService,
+      this.paymentService
+    );
+    this.loginCodeHelpController = new LoginCodeHelpController(
+      this.loginCodeQueue,
+      this.loginCodeHelp
+    );
+    this.incidentService = new IncidentService(this.prisma);
+    this.notificationController = new NotificationController(this.notificationService);
+    this.incidentController = new IncidentController(this.incidentService);
+    this.loginCodeController = new LoginCodeController(this.inboxService);
+
     // Initialize slot assignment service
-    this.slotAssignmentService = new SlotAssignmentService(this.prisma);
+    this.slotAssignmentService = new SlotAssignmentService(
+      this.prisma,
+      this.capacityForecastService,
+      this.notificationService
+    );
 
     // Initialize Subscription service with all dependencies
     this.subscriptionService = new SubscriptionService(
@@ -139,7 +233,13 @@ export class Container {
       this.subscriptionRequestRepository,
       this.serviceProviderRepository,
       this.countryRepository,
-      this.slotAssignmentService
+      this.slotAssignmentService,
+      this.capacityForecastService,
+      this.paymentService,
+      revealStore,
+      this.inboxService,
+      this.incidentService,
+      this.notificationService
     );
 
     this.subscriptionController = createSubscriptionController(
@@ -150,7 +250,14 @@ export class Container {
       this.userRepository,
       this.userService,
       this.subscriptionRepository,
-      this.serviceProviderRepository
+      this.serviceProviderRepository,
+      this.capacityForecastService,
+      this.subscriptionSlotRepository,
+      this.subscriptionRequestRepository,
+      this.subscriptionService,
+      revealStore,
+      this.paymentService,
+      this.loginCodeHelp
     );
     this.adminController = new AdminController(this.adminService);
   }
@@ -243,6 +350,42 @@ export class Container {
     return this.adminController;
   }
 
+  public getCapacityForecastService(): ICapacityForecastService {
+    return this.capacityForecastService;
+  }
+
+  public getPaymentController(): PaymentController {
+    return this.paymentController;
+  }
+
+  public getNotificationController(): NotificationController {
+    return this.notificationController;
+  }
+
+  public getIncidentController(): IncidentController {
+    return this.incidentController;
+  }
+
+  public getLoginCodeController(): LoginCodeController {
+    return this.loginCodeController;
+  }
+
+  public getInboxService(): InboxService {
+    return this.inboxService;
+  }
+
+  public getLoginCodeQueue(): LoginCodeQueue {
+    return this.loginCodeQueue;
+  }
+
+  public getLoginCodeHelpController(): LoginCodeHelpController {
+    return this.loginCodeHelpController;
+  }
+
+  public getNotificationPublisher(): NotificationPublisher {
+    return this.notificationPublisher;
+  }
+
   // General getters
   public getPrisma(): PrismaClient {
     return this.prisma;
@@ -291,6 +434,8 @@ export class Container {
         return this.currencyService as T;
       case "currencyController":
         return this.currencyController as T;
+      case "capacityForecastService":
+        return this.capacityForecastService as T;
       case "prisma":
         return this.prisma as T;
       default:

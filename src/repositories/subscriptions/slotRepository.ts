@@ -18,8 +18,17 @@ export class PrismaSubscriptionSlotRepository
     userId: string;
     subscriptionId: string;
   }): Promise<ISubscriptionSlot> {
-    const slot = await this.prisma.subscriptionSlot.create({
-      data,
+    const created = await this.prisma.subscriptionSlot.create({
+      data: {
+        userId: data.userId,
+        subscriptionId: data.subscriptionId,
+        access: "AWAITING_PAYMENT",
+        aliasLocalPart: `tmp${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
+      },
+    });
+    const slot = await this.prisma.subscriptionSlot.update({
+      where: { id: created.id },
+      data: { aliasLocalPart: `seat${created.id}` },
       include: slotInclude,
     });
     return SubscriptionSlot.fromPrisma(slot);
@@ -56,9 +65,10 @@ export class PrismaSubscriptionSlotRepository
     userId: string,
     subscriptionId: string
   ): Promise<ISubscriptionSlot | null> {
-    const slot = await this.prisma.subscriptionSlot.findUnique({
-      where: { userId_subscriptionId: { userId, subscriptionId } },
+    const slot = await this.prisma.subscriptionSlot.findFirst({
+      where: { userId, subscriptionId, isActive: true, releasedAt: null },
       include: slotInclude,
+      orderBy: { assignedAt: "desc" },
     });
     return slot ? SubscriptionSlot.fromPrisma(slot) : null;
   }

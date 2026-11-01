@@ -17,6 +17,11 @@ enum UserRole {
   ADMIN
 }
 
+enum AuthTokenPurpose {
+  VERIFY_EMAIL
+  RESET_PASSWORD
+}
+
 model User {
   id          String        @id @default(cuid())
   email       String        @unique
@@ -28,14 +33,29 @@ model User {
   role        UserRole      @default(USER)
   isVerified  Boolean       @default(false)
   isActive    Boolean       @default(true)
+  phone       String?
+  countryId   String?
+  timezone    String?
+  age         Int?
+  heardAboutUs String?
+  metadata    Json?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
   lastLoginAt DateTime?
 
+  country              Country?      @relation(fields: [countryId], references: [id], onDelete: SetNull)
   refreshTokens        RefreshToken[]
+  authTokens           AuthToken[]
   subscriptionSlots    SubscriptionSlot[]
   subscriptionRequests SubscriptionRequest[]
+  credentialReveals    CredentialReveal[]
+  loginIncidents       LoginIncident[]
+  notifications        Notification[]
+  payments             Payment[]
+  loginCodeClaims      LoginCodeClaim[]
+  loginCodeHelps       LoginCodeHelp[]
 
+  @@index([countryId])
   @@map("users")
 }
 
@@ -54,6 +74,20 @@ model RefreshToken {
   @@map("refresh_tokens")
 }
 
+model AuthToken {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose   AuthTokenPurpose
+  tokenHash String           @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  @@index([userId, purpose])
+  @@map("auth_tokens")
+}
+
 model Currency {
   id        String   @id @default(cuid())
   name      String   @unique
@@ -66,6 +100,7 @@ model Currency {
 
   countries     Country[]
   subscriptions Subscription[]
+  payments      Payment[]
 
   @@map("currencies")
 }
@@ -85,9 +120,11 @@ model Country {
   updatedAt   DateTime @updatedAt
 
   currency             Currency?                @relation(fields: [currencyId], references: [id], onDelete: SetNull)
+  users                User[]
   serviceProviders     ServiceProviderCountry[]
   subscriptions        Subscription[]
   subscriptionRequests SubscriptionRequest[]
+  capacityAlerts       CapacityAlert[]
 
   @@index([currencyId])
   @@map("countries")
@@ -97,13 +134,17 @@ model ServiceProvider {
   id          String   @id @default(cuid())
   name        String   @unique
   description String?
-  metadata    Json?
-  createdAt   DateTime @default(now())
+  iconUrl            String?
+  metadata           Json?
+  codeSenderDomains  String[] @default([])
+  codePattern        String?
+  createdAt          DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   subscriptions        Subscription[]
   supportedCountries   ServiceProviderCountry[]
   subscriptionRequests SubscriptionRequest[]
+  capacityAlerts       CapacityAlert[]
 
   @@map("service_providers")
 }
@@ -137,6 +178,7 @@ model Subscription {
   expiresAt            DateTime?
   renewalInfo          Json?
   userPrice            Decimal?
+  accountCost          Decimal?
   currencyId           String?
   metadata             Json?
   isActive             Boolean   @default(true)
@@ -147,29 +189,53 @@ model Subscription {
   country           Country?           @relation(fields: [countryId], references: [id], onDelete: SetNull)
   currency          Currency?          @relation(fields: [currencyId], references: [id], onDelete: SetNull)
   subscriptionSlots SubscriptionSlot[]
+  capacityAlerts    CapacityAlert[]
+  credentialReveals CredentialReveal[]
+  loginIncidents    LoginIncident[]
+  payments          Payment[]
+  loginCodeClaims   LoginCodeClaim[]
+  loginCodeHelps    LoginCodeHelp[]
 
   @@index([serviceProviderId, countryId, isActive])
   @@index([currencyId])
   @@map("subscriptions")
 }
 
+enum SlotAccess {
+  AWAITING_PAYMENT
+  ACTIVE
+  BLOCKED
+}
+
 model SubscriptionSlot {
-  id             String    @id @default(cuid())
+  id             String     @id @default(cuid())
   userId         String
   subscriptionId String
-  assignedAt     DateTime  @default(now())
-  isActive       Boolean   @default(true)
+  assignedAt     DateTime   @default(now())
+  isActive       Boolean    @default(true)
   releasedAt     DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  access         SlotAccess @default(AWAITING_PAYMENT)
+  termStartsAt   DateTime?
+  termEndsAt     DateTime?
+  blockedAt      DateTime?
+  aliasLocalPart String     @unique
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
 
-  user            User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subscription    Subscription          @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-  assignedRequest SubscriptionRequest?
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription      Subscription          @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  assignedRequest   SubscriptionRequest?
+  credentialReveals CredentialReveal[]
+  loginCodes        LoginCode[]
+  loginIncidents    LoginIncident[]
+  payments          Payment[]
+  loginCodeClaims   LoginCodeClaim[]
+  loginCodeHelps    LoginCodeHelp[]
 
-  @@unique([userId, subscriptionId])
   @@index([subscriptionId, isActive])
   @@index([userId])
+  @@index([access, termEndsAt])
+  @@index([access, assignedAt])
   @@map("subscription_slots")
 }
 
@@ -201,4 +267,237 @@ model SubscriptionRequest {
   @@index([userId, status])
   @@index([serviceProviderId, countryId, status])
   @@map("subscription_requests")
+}
+
+enum CapacityAlertStatus {
+  OPEN
+  RESOLVED
+}
+
+model CapacityAlert {
+  id                    String              @id @default(cuid())
+  serviceProviderId     String
+  countryId             String?
+  poolKey               String
+  openPoolKey           String?             @unique
+  status                CapacityAlertStatus @default(OPEN)
+  headroom              Int
+  pendingCount          Int
+  packingSubscriptionId String?
+  recentRatePerHour     Float?
+  historicalFillMs      BigInt?
+  etaMs                 BigInt?
+  horizonMs             BigInt?
+  openedAt              DateTime            @default(now())
+  resolvedAt            DateTime?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  serviceProvider     ServiceProvider @relation(fields: [serviceProviderId], references: [id], onDelete: Cascade)
+  country             Country?        @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  packingSubscription Subscription?   @relation(fields: [packingSubscriptionId], references: [id], onDelete: SetNull)
+
+  @@index([status, openedAt])
+  @@index([serviceProviderId])
+  @@map("capacity_alerts")
+}
+
+model CredentialReveal {
+  id             String   @id @default(cuid())
+  actorUserId    String
+  slotId         String
+  subscriptionId String
+  createdAt      DateTime @default(now())
+
+  actor        User             @relation(fields: [actorUserId], references: [id], onDelete: Cascade)
+  slot         SubscriptionSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  subscription Subscription     @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId, createdAt])
+  @@map("credential_reveals")
+}
+
+enum LoginCodeSource {
+  INBOX
+  ADMIN
+}
+
+enum LoginCodeClaimStatus {
+  QUEUED
+  ACTIVE
+  MATCHED
+  EXPIRED
+}
+
+model LoginCodeClaim {
+  id             String               @id @default(cuid())
+  slotId         String
+  userId         String
+  subscriptionId String
+  status         LoginCodeClaimStatus
+  openedAt       DateTime             @default(now())
+  activatedAt    DateTime?
+  expiresAt      DateTime?
+  closedAt       DateTime?
+  openAccountKey String?              @unique
+
+  slot         SubscriptionSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscription     @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  loginCodes   LoginCode[]
+  helpRequests LoginCodeHelp[]
+
+  @@index([subscriptionId, status, openedAt])
+  @@index([status, expiresAt])
+  @@index([slotId, status])
+  @@map("login_code_claims")
+}
+
+model LoginCode {
+  id         String          @id @default(cuid())
+  slotId     String?
+  claimId    String?
+  alias      String
+  code       String
+  source     LoginCodeSource @default(INBOX)
+  receivedAt DateTime        @default(now())
+
+  slot  SubscriptionSlot? @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  claim LoginCodeClaim?   @relation(fields: [claimId], references: [id], onDelete: SetNull)
+
+  @@index([slotId, receivedAt])
+  @@index([receivedAt])
+  @@map("login_codes")
+}
+
+enum LoginCodeHelpStatus {
+  OPEN
+  RESOLVED
+}
+
+model LoginCodeHelp {
+  id               String              @id @default(cuid())
+  slotId           String
+  userId           String
+  subscriptionId   String
+  claimId          String?
+  status           LoginCodeHelpStatus @default(OPEN)
+  createdAt        DateTime            @default(now())
+  resolvedAt       DateTime?
+  resolvedBy       LoginCodeSource?
+  resolvedByUserId String?
+  openSlotKey      String?             @unique
+
+  slot         SubscriptionSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscription     @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  claim        LoginCodeClaim?  @relation(fields: [claimId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@map("login_code_help")
+}
+
+enum IncidentStatus {
+  OPEN
+  RESOLVED
+}
+
+model LoginIncident {
+  id             String         @id @default(cuid())
+  slotId         String
+  userId         String
+  subscriptionId String
+  note           String
+  status         IncidentStatus @default(OPEN)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  resolvedAt     DateTime?
+
+  slot         SubscriptionSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscription     @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId, status])
+  @@index([slotId])
+  @@map("login_incidents")
+}
+
+enum NotificationKind {
+  PROVIDER_EXPIRY
+  SEAT_EXPIRY
+  SEAT_CHANGE
+  PAYMENT_CONFIRMATION
+  PAYMENT_TO_VERIFY
+  LOGIN_CODE_HELP
+}
+
+enum NotificationStage {
+  NONE
+  WEEK
+  DAY
+}
+
+model Notification {
+  id              String             @id @default(cuid())
+  recipientUserId String
+  kind            NotificationKind
+  body            String
+  subscriptionId  String?
+  slotId          String?
+  paymentId       String?
+  stage           NotificationStage  @default(NONE)
+  dedupeKey       String?            @unique
+  readAt          DateTime?
+  createdAt       DateTime           @default(now())
+
+  recipient User @relation(fields: [recipientUserId], references: [id], onDelete: Cascade)
+
+  @@index([recipientUserId, createdAt])
+  @@index([kind, createdAt])
+  @@map("notifications")
+}
+
+enum PaymentMethod {
+  IHELLA
+  LUMICASH
+  ENOTI
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+enum PaymentVerification {
+  MANUAL
+  ONLINE
+}
+
+model Payment {
+  id                   String              @id @default(cuid())
+  userId               String
+  slotId               String
+  subscriptionId       String
+  amount               Decimal
+  currencyId           String
+  verification         PaymentVerification @default(ONLINE)
+  method               PaymentMethod?
+  confirmationNote     String?
+  status               PaymentStatus       @default(PENDING)
+  providerRef          String?             @unique
+  paidAt               DateTime?
+  settledAfterRelease  Boolean             @default(false)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slot         SubscriptionSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  subscription Subscription     @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  currency     Currency         @relation(fields: [currencyId], references: [id], onDelete: Restrict)
+
+  @@index([slotId, status])
+  @@index([status, createdAt])
+  @@index([verification, status])
+  @@map("payments")
 }

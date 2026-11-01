@@ -28,7 +28,10 @@ export class ServiceProvider implements IServiceProvider {
   public readonly id: string;
   public readonly name: string;
   public readonly description?: string | null;
+  public readonly iconUrl?: string | null;
   public readonly metadata?: Prisma.JsonValue | null;
+  public readonly codeSenderDomains: string[];
+  public readonly codePattern: string | null;
   public readonly createdAt: Date;
   public readonly updatedAt: Date;
   public readonly supportedCountries?: { country: ICountry }[];
@@ -37,7 +40,10 @@ export class ServiceProvider implements IServiceProvider {
     this.id = data.id;
     this.name = data.name;
     this.description = data.description;
+    this.iconUrl = data.iconUrl;
     this.metadata = data.metadata;
+    this.codeSenderDomains = data.codeSenderDomains ?? [];
+    this.codePattern = data.codePattern ?? null;
     this.createdAt = data.createdAt;
     this.updatedAt = data.updatedAt;
     this.supportedCountries = data.supportedCountries;
@@ -107,7 +113,10 @@ export class ServiceProvider implements IServiceProvider {
       id: this.id,
       name: this.name,
       description: this.description,
+      iconUrl: this.iconUrl,
       metadata: this.metadata,
+      codeSenderDomains: this.codeSenderDomains,
+      codePattern: this.codePattern,
       supportedCountries:
         this.supportedCountries?.map((rel) => ({
           id: rel.country.id,
@@ -150,7 +159,10 @@ export class ServiceProvider implements IServiceProvider {
       id: data.id,
       name: data.name,
       description: data.description,
+      iconUrl: data.iconUrl,
       metadata: data.metadata,
+      codeSenderDomains: data.codeSenderDomains ?? [],
+      codePattern: data.codePattern ?? null,
       createdAt: data.createdAt,
       updatedAt: data.updatedAt,
       supportedCountries,

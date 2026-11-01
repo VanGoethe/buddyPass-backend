@@ -1,0 +1,19 @@
+---
+description: HTTP contracts, Zod validation, and OpenAPI
+globs: src/**/*.ts
+alwaysApply: false
+---
+
+# API
+
+Success responses are `{ success: true, data, message? }` through `sendSuccess`.
+
+- Validate bodies, params, and queries with Zod in `src/types/schemas.ts` and the `validate()` middleware. Do not add express-validator.
+- Register component schemas in `src/config/openapi.ts` from those Zod objects. Keep the route JSDoc on the same behavior, including status codes and examples.
+- Protected routes use `authenticateJWT`. Admin routes also use `requireAdmin`. Seat requests use `requireVerified`.
+- Pagination is page and limit. Primary keys are `cuid()`.
+- Auth is JWT `HS256`, issuer `buddypass`, audience `buddypass-api`. Access tokens last 15 minutes. Refresh tokens are SHA-256 hashes and rotate. Do not change the algorithm as part of an unrelated change.
+- User passwords are bcrypt. Streaming passwords are encrypted, not hashed.
+- Google sign-in links an email only when that local account is already verified.
+
+An endpoint change updates the Zod schema, the OpenAPI component or route docs, and `CHANGELOG.md` together.

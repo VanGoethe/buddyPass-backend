@@ -46,6 +46,9 @@ export type { IUserService } from "../types/users";
 export { SubscriptionService } from "./subscriptions";
 export type { ISubscriptionService } from "../types/subscriptions";
 
+export { CapacityForecastService } from "./capacity";
+export type { ICapacityForecastService } from "../types/capacity";
+
 // Service Provider services
 export { ServiceProviderService } from "./serviceProviders";
 export type { IServiceProviderService } from "../types/serviceProviders";

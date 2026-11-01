@@ -5,6 +5,7 @@ import { withTestCleanup } from "../utils/testCleanup";
 import { signAccessToken } from "../utils/accessToken";
 import {
   FUTURE_EXPIRES_AT,
+  occupiedSlotData,
   subscriptionSecrets,
 } from "../utils/subscriptionFixture";
 
@@ -105,7 +106,7 @@ describe("Subscription Assignment API", () => {
         });
         cleanup.trackSubscription(subscription.id);
         const slot = await prisma.subscriptionSlot.create({
-          data: { userId: holder.id, subscriptionId: subscription.id },
+          data: occupiedSlotData(holder.id, subscription.id),
         });
         cleanup.trackSubscriptionSlot(slot.id);
 
@@ -185,7 +186,7 @@ describe("Subscription Assignment API", () => {
         });
         cleanup.trackSubscription(subscription.id);
         const slot = await prisma.subscriptionSlot.create({
-          data: { userId: user.id, subscriptionId: subscription.id },
+          data: occupiedSlotData(user.id, subscription.id),
         });
         cleanup.trackSubscriptionSlot(slot.id);
 
@@ -234,7 +235,7 @@ describe("Subscription Assignment API", () => {
         });
         cleanup.trackSubscription(subscription.id);
         const slot = await prisma.subscriptionSlot.create({
-          data: { userId: user.id, subscriptionId: subscription.id },
+          data: occupiedSlotData(user.id, subscription.id),
         });
         cleanup.trackSubscriptionSlot(slot.id);
 

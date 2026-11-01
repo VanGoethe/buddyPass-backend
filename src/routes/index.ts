@@ -11,7 +11,7 @@ const router = Router();
 router.get("/", (_req, res) => {
   res.json({
     message: "BuddyPass API",
-    version: "2.0.0",
+    version: "3.0.0",
     status: "active",
     timestamp: new Date().toISOString(),
   });
@@ -24,6 +24,8 @@ import subscriptionRoutes from "./subscriptions";
 import countryRoutes from "./countries";
 import currencyRoutes from "./currencies";
 import adminRoutes from "./admin";
+import paymentRoutes from "./payments";
+import offerRoutes from "./offers";
 
 // Route configurations
 router.use("/users", userRoutes); // Clean architecture authentication and user management
@@ -32,5 +34,7 @@ router.use("/subscriptions", subscriptionRoutes); // Subscription CRUD operation
 router.use("/countries", countryRoutes); // Country CRUD operations
 router.use("/currencies", currencyRoutes); // Currency CRUD operations
 router.use("/admin", adminRoutes); // Admin platform management routes
+router.use("/payments", paymentRoutes);
+router.use("/offers", offerRoutes);
 
 export default router;

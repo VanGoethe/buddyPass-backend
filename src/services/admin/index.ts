@@ -5,12 +5,29 @@ import {
   UpdateProfileRequest,
   UserResponse,
 } from "../../types/users";
-import { ISubscriptionRepository } from "../../types/subscriptions";
+import {
+  CapacityAlertView,
+  ICapacityForecastService,
+  OpenCapacityAlertSummary,
+} from "../../types/capacity";
 import { IServiceProviderRepository } from "../../types/serviceProviders";
+import {
+  CreateSubscriptionData,
+  ISubscriptionRepository,
+  ISubscriptionRequestRepository,
+  ISubscriptionService,
+  ISubscriptionSlotRepository,
+  PendingRequestRow,
+} from "../../types/subscriptions";
+import { IRevealStore } from "../../repositories/reveals";
+import { IPaymentAdminSummary } from "../payments";
+import { SubscriptionRequest, SubscriptionSlot } from "../../models/subscriptions";
 import {
   NotFoundError,
   ValidationError,
 } from "../../utils/errors";
+import { numberByPool } from "../subscriptions/waitingLine";
+import { isProfileComplete } from "../users/profile";
 
 export interface AdminUserView extends UserResponse {
   lastLoginAt?: Date | null;
@@ -28,7 +45,14 @@ export class AdminService {
     private userRepository: IUserRepository,
     private userService: IUserService,
     private subscriptionRepository: ISubscriptionRepository,
-    private serviceProviderRepository: IServiceProviderRepository
+    private serviceProviderRepository: IServiceProviderRepository,
+    private capacityForecast: ICapacityForecastService,
+    private subscriptionSlotRepository: ISubscriptionSlotRepository,
+    private subscriptionRequestRepository: ISubscriptionRequestRepository,
+    private subscriptionService: ISubscriptionService,
+    private revealStore: IRevealStore,
+    private payments: IPaymentAdminSummary,
+    private codeHelp: { countOpen(): Promise<number> }
   ) {}
 
   async createAdmin(data: {
@@ -45,18 +69,58 @@ export class AdminService {
       totalSubscriptions: number;
       totalServiceProviders: number;
     };
+    inventory: Awaited<ReturnType<ISubscriptionRepository["inventoryByService"]>>;
+    waitingCount: number;
+    paymentsToVerify: number;
+    codeHelpOpen: number;
+    expiringAccounts: Awaited<ReturnType<ISubscriptionRepository["listExpiringAccounts"]>>;
+    openCapacityAlerts: OpenCapacityAlertSummary;
     lastUpdated: string;
   }> {
-    const [totalUsers, totalSubscriptions, totalServiceProviders] =
-      await Promise.all([
-        this.userRepository.count(),
-        this.subscriptionRepository.count(),
-        this.serviceProviderRepository.count(),
-      ]);
+    const [
+      totalUsers,
+      totalSubscriptions,
+      totalServiceProviders,
+      openCapacityAlerts,
+      inventory,
+      waitingCount,
+      paymentsToVerify,
+      expiringAccounts,
+      pending,
+      codeHelpOpen,
+    ] = await Promise.all([
+      this.userRepository.count(),
+      this.subscriptionRepository.count(),
+      this.serviceProviderRepository.count(),
+      this.capacityForecast.getOpenAlertSummary(),
+      this.subscriptionRepository.inventoryByService(),
+      this.subscriptionRequestRepository.countPending(),
+      this.payments.countAwaitingAdmin(),
+      this.subscriptionRepository.listExpiringAccounts(7),
+      this.subscriptionRequestRepository.listPendingDetailed(),
+      this.codeHelp.countOpen(),
+    ]);
     return {
       statistics: { totalUsers, totalSubscriptions, totalServiceProviders },
+      inventory,
+      waitingCount,
+      paymentsToVerify,
+      codeHelpOpen,
+      expiringAccounts,
+      openCapacityAlerts: {
+        ...openCapacityAlerts,
+        alerts: this.withWaiters(openCapacityAlerts.alerts, pending),
+      },
       lastUpdated: new Date().toISOString(),
     };
+  }
+
+  async listCapacityAlerts(): Promise<OpenCapacityAlertSummary["alerts"]> {
+    const [alerts, pending] = await Promise.all([
+      this.capacityForecast.listOpenAlerts(),
+      this.subscriptionRequestRepository.listPendingDetailed(),
+    ]);
+    return this.withWaiters(alerts, pending);
   }
 
   async listUsers(query: AdminListQuery): Promise<{
@@ -88,9 +152,72 @@ export class AdminService {
     };
   }
 
-  async getUser(userId: string): Promise<AdminUserView> {
+  async getUser(userId: string) {
     const user = await this.requireUser(userId);
-    return this.toAdminView(user);
+    const [seats, requests] = await Promise.all([
+      this.subscriptionSlotRepository.findByUserId(userId),
+      this.subscriptionRequestRepository.findByUserId(userId),
+    ]);
+    return {
+      ...this.toAdminView(user),
+      seats: seats.map((seat) =>
+        seat instanceof SubscriptionSlot ? seat.toResponse() : seat
+      ),
+      pendingRequests: requests
+        .filter((request) => request.status === "PENDING")
+        .map((request) =>
+          request instanceof SubscriptionRequest ? request.toResponse() : request
+        ),
+    };
+  }
+
+  async setVerified(userId: string, isVerified: boolean): Promise<AdminUserView> {
+    await this.requireUser(userId);
+    await this.userRepository.updateProfile(userId, { isVerified });
+    const updated = await this.requireUser(userId);
+    return this.toAdminView(updated);
+  }
+
+  async listWaitingLine() {
+    const rows = await this.subscriptionRequestRepository.listPendingDetailed();
+    const places = numberByPool(rows);
+    return rows.map((row) => {
+      return {
+        id: row.id,
+        userId: row.userId,
+        userName: row.userName,
+        serviceProviderId: row.serviceProviderId,
+        serviceProviderName: row.serviceProviderName,
+        countryId: row.countryId,
+        countryName: row.countryName,
+        place: places.get(row.id) ?? 1,
+        requestedAt: row.requestedAt.toISOString(),
+      };
+    });
+  }
+
+  async createAccountFromAlert(
+    alertId: string,
+    data: Omit<CreateSubscriptionData, "serviceProviderId" | "countryId">
+  ) {
+    const alerts = await this.capacityForecast.listOpenAlerts();
+    const alert = alerts.find((item) => item.id === alertId);
+    if (!alert) {
+      throw new NotFoundError("Capacity alert not found");
+    }
+    return this.subscriptionService.createSubscription({
+      ...data,
+      serviceProviderId: alert.serviceProviderId,
+      countryId: alert.countryId ?? undefined,
+    });
+  }
+
+  async listReveals(subscriptionId: string) {
+    const subscription = await this.subscriptionRepository.findById(subscriptionId);
+    if (!subscription) {
+      throw new NotFoundError("Subscription not found");
+    }
+    return this.revealStore.listBySubscription(subscriptionId);
   }
 
   async updateStatus(
@@ -156,6 +283,31 @@ export class AdminService {
     await this.userRepository.delete(userId);
   }
 
+  private withWaiters(
+    alerts: CapacityAlertView[],
+    pending: PendingRequestRow[]
+  ): CapacityAlertView[] {
+    return alerts.map((alert) => {
+      const waiting = pending
+        .filter(
+          (row) =>
+            row.serviceProviderId === alert.serviceProviderId &&
+            (row.countryId ?? null) === (alert.countryId ?? null)
+        )
+        .map((row, index) => ({
+          userId: row.userId,
+          name: row.userName,
+          requestedAt: row.requestedAt.toISOString(),
+          place: index + 1,
+        }));
+      return {
+        ...alert,
+        waiting,
+        freeSeats: alert.headroom + alert.pendingCount,
+      };
+    });
+  }
+
   private async requireUser(userId: string) {
     const user = await this.userRepository.findById(userId);
     if (!user) {
@@ -173,6 +325,13 @@ export class AdminService {
     role: UserRole;
     isVerified: boolean;
     isActive: boolean;
+    phone?: string | null;
+    countryId?: string | null;
+    country?: UserResponse["country"];
+    timezone?: string | null;
+    age?: number | null;
+    heardAboutUs?: string | null;
+    metadata?: UserResponse["metadata"];
     createdAt: Date;
     updatedAt: Date;
     lastLoginAt?: Date | null;
@@ -186,6 +345,13 @@ export class AdminService {
       role: user.role,
       isVerified: user.isVerified,
       isActive: user.isActive,
+      phone: user.phone ?? null,
+      country: user.country ?? null,
+      timezone: user.timezone ?? null,
+      age: user.age ?? null,
+      heardAboutUs: user.heardAboutUs ?? null,
+      metadata: user.metadata ?? null,
+      profileComplete: isProfileComplete(user),
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
       lastLoginAt: user.lastLoginAt,
@@ -197,12 +363,26 @@ export function createAdminService(
   userRepository: IUserRepository,
   userService: IUserService,
   subscriptionRepository: ISubscriptionRepository,
-  serviceProviderRepository: IServiceProviderRepository
+  serviceProviderRepository: IServiceProviderRepository,
+  capacityForecast: ICapacityForecastService,
+  subscriptionSlotRepository: ISubscriptionSlotRepository,
+  subscriptionRequestRepository: ISubscriptionRequestRepository,
+  subscriptionService: ISubscriptionService,
+  revealStore: IRevealStore,
+  payments: IPaymentAdminSummary,
+  codeHelp: { countOpen(): Promise<number> }
 ): AdminService {
   return new AdminService(
     userRepository,
     userService,
     subscriptionRepository,
-    serviceProviderRepository
+    serviceProviderRepository,
+    capacityForecast,
+    subscriptionSlotRepository,
+    subscriptionRequestRepository,
+    subscriptionService,
+    revealStore,
+    payments,
+    codeHelp
   );
 }

@@ -10,6 +10,9 @@ export class TestDataCleanup {
   private createdSubscriptions: string[] = [];
   private createdSubscriptionSlots: string[] = [];
   private createdSubscriptionRequests: string[] = [];
+  private createdCapacityAlerts: string[] = [];
+  private createdLoginCodeClaims: string[] = [];
+  private createdLoginCodeHelps: string[] = [];
 
   // Track created entities
   trackUser(id: string) {
@@ -36,13 +39,28 @@ export class TestDataCleanup {
     this.createdSubscriptionSlots.push(id);
   }
 
+  trackLoginCodeClaim(id: string) {
+    this.createdLoginCodeClaims.push(id);
+  }
+
+  trackLoginCodeHelp(id: string) {
+    this.createdLoginCodeHelps.push(id);
+  }
+
   trackSubscriptionRequest(id: string) {
     this.createdSubscriptionRequests.push(id);
+  }
+
+  trackCapacityAlert(id: string) {
+    this.createdCapacityAlerts.push(id);
   }
 
   // Clean up methods
   async cleanupUsers() {
     if (this.createdUsers.length > 0) {
+      await prisma.authToken.deleteMany({
+        where: { userId: { in: this.createdUsers } },
+      });
       await prisma.refreshToken.deleteMany({
         where: { userId: { in: this.createdUsers } },
       });
@@ -51,6 +69,28 @@ export class TestDataCleanup {
       });
       this.createdUsers = [];
     }
+  }
+
+  async cleanupCapacityAlerts() {
+    if (
+      this.createdCapacityAlerts.length === 0 &&
+      this.createdServiceProviders.length === 0
+    ) {
+      return;
+    }
+    await prisma.capacityAlert.deleteMany({
+      where: {
+        OR: [
+          ...(this.createdCapacityAlerts.length > 0
+            ? [{ id: { in: this.createdCapacityAlerts } }]
+            : []),
+          ...(this.createdServiceProviders.length > 0
+            ? [{ serviceProviderId: { in: this.createdServiceProviders } }]
+            : []),
+        ],
+      },
+    });
+    this.createdCapacityAlerts = [];
   }
 
   async cleanupSubscriptions() {
@@ -116,7 +156,24 @@ export class TestDataCleanup {
   }
 
   // Clean up everything
+  async cleanupLoginCodeRows() {
+    if (this.createdLoginCodeHelps.length > 0) {
+      await prisma.loginCodeHelp.deleteMany({
+        where: { id: { in: this.createdLoginCodeHelps } },
+      });
+      this.createdLoginCodeHelps = [];
+    }
+    if (this.createdLoginCodeClaims.length > 0) {
+      await prisma.loginCodeClaim.deleteMany({
+        where: { id: { in: this.createdLoginCodeClaims } },
+      });
+      this.createdLoginCodeClaims = [];
+    }
+  }
+
   async cleanupAll() {
+    await this.cleanupLoginCodeRows();
+    await this.cleanupCapacityAlerts();
     await this.cleanupSubscriptions(); // This will also cleanup slots and requests
     await this.cleanupServiceProviders();
     await this.cleanupCountries();
@@ -126,6 +183,7 @@ export class TestDataCleanup {
 
   // Get or create test entities
   async getOrCreateTestUser(email: string) {
+    const country = await this.getOrCreateTestCountry("TPU", "Test Profile Country");
     let user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
       user = await prisma.user.create({
@@ -136,27 +194,56 @@ export class TestDataCleanup {
           role: "USER",
           isVerified: true,
           isActive: true,
+          phone: "+25779123456",
+          countryId: country.id,
         },
       });
       this.trackUser(user.id);
+      return user;
+    }
+    if (!user.phone || !user.countryId || !user.name) {
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          name: user.name ?? `Test User ${Date.now()}`,
+          phone: user.phone ?? "+25779123456",
+          countryId: user.countryId ?? country.id,
+        },
+      });
     }
     return user;
   }
 
   async getOrCreateTestCountry(code: string, name?: string) {
-    let country = await prisma.country.findUnique({ where: { code } });
-    if (!country) {
-      country = await prisma.country.create({
+    const existing = await prisma.country.findUnique({ where: { code } });
+    if (existing) {
+      return existing;
+    }
+    const countryName = name || `Test Country ${code}`;
+    try {
+      const country = await prisma.country.create({
         data: {
-          name: name || `Test Country ${code}`,
+          name: countryName,
           code,
           alpha3: code + "X",
           isActive: true,
         },
       });
       this.trackCountry(country.id);
+      return country;
+    } catch (error) {
+      const codeName = (error as { code?: string }).code;
+      if (codeName !== "P2002") {
+        throw error;
+      }
+      const raced =
+        (await prisma.country.findUnique({ where: { code } })) ??
+        (await prisma.country.findUnique({ where: { name: countryName } }));
+      if (!raced) {
+        throw error;
+      }
+      return raced;
     }
-    return country;
   }
 
   async getOrCreateTestServiceProvider(name: string) {

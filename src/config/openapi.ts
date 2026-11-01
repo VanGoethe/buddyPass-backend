@@ -5,6 +5,7 @@ import {
 } from "@asteasolutions/zod-to-openapi";
 import { z } from "zod";
 import {
+  adminLoginCodeSchema,
   adminUpdateUserSchema,
   changePasswordSchema,
   createAdminSchema,
@@ -16,6 +17,11 @@ import {
   updateRoleSchema,
   updateStatusSchema,
   updateSubscriptionSchema,
+  paymentConfirmationSchema,
+  paymentMethodSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  verifyEmailSchema,
 } from "../types/schemas";
 
 extendZodWithOpenApi(z);
@@ -76,6 +82,15 @@ const userResponse = z
     role: z.enum(["USER", "ADMIN"]),
     isVerified: z.boolean(),
     isActive: z.boolean(),
+    phone: z.string().nullable(),
+    country: z
+      .object({ id: z.string(), name: z.string(), code: z.string() })
+      .nullable(),
+    timezone: z.string().nullable(),
+    age: z.number().int().nullable(),
+    heardAboutUs: z.string().nullable(),
+    metadata: jsonValue.nullable(),
+    profileComplete: z.boolean(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
     lastLoginAt: z.string().datetime().nullable().optional(),
@@ -96,6 +111,7 @@ const authResponse = z
     data: z.object({
       accessToken: z.string(),
       refreshToken: z.string(),
+      verificationEmailSent: z.boolean().optional(),
       user: userResponse,
     }),
   })
@@ -106,7 +122,10 @@ const serviceProvider = z
     id: z.string(),
     name: z.string(),
     description: z.string().nullable().optional(),
+    iconUrl: z.string().nullable().optional(),
     metadata: jsonValue.nullable().optional(),
+    codeSenderDomains: z.array(z.string()).optional(),
+    codePattern: z.string().nullable().optional(),
     supportedCountries: z
       .array(
         z.object({
@@ -126,8 +145,11 @@ const createServiceProviderRequest = z
   .object({
     name: z.string().min(1),
     description: z.string().optional(),
+    iconUrl: z.string().optional(),
     metadata: jsonValue.optional(),
     supportedCountryIds: z.array(z.string()).optional(),
+    codeSenderDomains: z.array(z.string()).max(20).optional(),
+    codePattern: z.string().max(200).nullable().optional(),
   })
   .openapi("CreateServiceProviderRequest");
 
@@ -148,6 +170,7 @@ const subscription = z
     needsCredentialReset: z.boolean(),
     expiresAt: z.string().datetime().nullable().optional(),
     userPrice: z.number().nullable().optional(),
+    accountCost: z.string().nullable().optional(),
     currencyId: z.string().nullable().optional(),
     isActive: z.boolean(),
     metadata: jsonValue.nullable().optional(),
@@ -178,6 +201,7 @@ const subscriptionRequest = z
     assignedSlotId: z.string().nullable().optional(),
     requestedAt: z.string().datetime(),
     processedAt: z.string().datetime().nullable().optional(),
+    place: z.number().int().nullable(),
   })
   .openapi("SubscriptionRequest");
 
@@ -325,13 +349,77 @@ const serviceProviderListResponse = z
   })
   .openapi("ServiceProviderListResponse");
 
+const capacityAlert = z
+  .object({
+    id: z.string(),
+    serviceProviderId: z.string(),
+    serviceProviderName: z.string(),
+    countryId: z.string().nullable(),
+    countryName: z.string().nullable(),
+    packingSubscriptionId: z.string().nullable(),
+    headroom: z.number().int(),
+    pendingCount: z.number().int(),
+    freeSeats: z.number().int(),
+    waiting: z.array(
+      z.object({
+        userId: z.string(),
+        name: z.string().nullable(),
+        requestedAt: z.string().datetime(),
+        place: z.number().int(),
+      })
+    ),
+    recentRatePerHour: z.number().nullable(),
+    historicalFillMs: z.number().int().nullable(),
+    etaMs: z.number().int().nullable(),
+    horizonMs: z.number().int().nullable(),
+    openedAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  })
+  .openapi("CapacityAlert");
+
 const adminDashboard = z
   .object({
-    users: z.number().int(),
-    subscriptions: z.number().int(),
-    serviceProviders: z.number().int(),
+    statistics: z.object({
+      totalUsers: z.number().int(),
+      totalSubscriptions: z.number().int(),
+      totalServiceProviders: z.number().int(),
+    }),
+    inventory: z.array(
+      z.object({
+        serviceProviderId: z.string(),
+        serviceProviderName: z.string(),
+        total: z.number().int(),
+        taken: z.number().int(),
+        free: z.number().int(),
+      })
+    ),
+    waitingCount: z.number().int(),
+    paymentsToVerify: z.number().int(),
+    codeHelpOpen: z.number().int(),
+    expiringAccounts: z.array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        serviceProviderName: z.string(),
+        expiresAt: z.string().datetime(),
+      })
+    ),
+    openCapacityAlerts: z.object({
+      count: z.number().int(),
+      alerts: z.array(capacityAlert),
+    }),
+    lastUpdated: z.string().datetime(),
   })
   .openapi("AdminDashboard");
+
+const capacityAlertListResponse = z
+  .object({
+    success: z.literal(true),
+    data: z.object({
+      alerts: z.array(capacityAlert),
+    }),
+  })
+  .openapi("CapacityAlertListResponse");
 
 const credentialReveal = z
   .object({
@@ -360,6 +448,12 @@ registerBody("UpdateSubscriptionRequest", updateSubscriptionSchema);
 registerBody("UpdateUserStatusRequest", updateStatusSchema);
 registerBody("UpdateUserRoleRequest", updateRoleSchema);
 registerBody("AdminUpdateUserRequest", adminUpdateUserSchema);
+registerBody("StartPaymentRequest", paymentMethodSchema);
+registerBody("PaymentConfirmationRequest", paymentConfirmationSchema);
+registerBody("AdminLoginCodeRequest", adminLoginCodeSchema);
+registerBody("VerifyEmailRequest", verifyEmailSchema);
+registerBody("ForgotPasswordRequest", forgotPasswordSchema);
+registerBody("ResetPasswordRequest", resetPasswordSchema);
 
 registry.register("ErrorResponse", errorBody);
 registry.register("ValidationErrorResponse", validationErrorBody);
@@ -388,6 +482,8 @@ registry.register("CurrencyListResponse", currencyListResponse);
 registry.register("CreateCurrencyRequest", createCurrencyRequest);
 registry.register("UpdateCurrencyRequest", updateCurrencyRequest);
 registry.register("AdminDashboard", adminDashboard);
+registry.register("CapacityAlert", capacityAlert);
+registry.register("CapacityAlertListResponse", capacityAlertListResponse);
 registry.register("CredentialReveal", credentialReveal);
 
 export function buildOpenApiSchemas(): Record<string, object> {

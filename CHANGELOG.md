@@ -7,6 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Confirming a payment, for manual verification, Ihella, Lumicash, or Bancobu eNoti, pushes `seat-ready` after the seat becomes active. The event has no email and no password. The customer fetches the login as before.
+- `POST /api/subscriptions/slots/:slotId/login-code/request` is Get verification code and Recheck. One claim per shared account is active. Later taps are queued and answered with `phase`, `position`, and `estimatedStartAt`. There is no busy error. The inbox matches that active claim by the account email, the provider's sender domains, and the time the turn started. A queued claim is not eligible.
+- `POST /api/subscriptions/slots/:slotId/login-code/help` tells every admin when a customer did not get a code. `GET /api/admin/login-code-help` lists those requests. `POST /api/admin/slots/:slotId/login-code` stores a code the admin typed, pushes it to that customer with `source` `ADMIN`, and does not echo the code. The dashboard includes `codeHelpOpen`.
+- Providers store `codeSenderDomains` and an optional `codePattern`.
+- `LOGIN_CODE_WATCH_SECONDS`, `LOGIN_CODE_WATCH_INTERVAL_SECONDS`, `LOGIN_CODE_CLOCK_SKEW_SECONDS`, and `LOGIN_CODE_TURN_ESTIMATE_SECONDS`. Migration `20261101140000_login_code_claims`.
+
+### Fixed
+
+- Inbox polling now searches, fetches, and marks messages by IMAP UID, so a code email is not read again on the next poll.
+
+### Added
+
+- A local account can confirm its email and reset a forgotten password. `POST /api/users/verification-email` sends another link, `POST /api/users/verify-email` confirms the single-use token, `POST /api/users/forgot-password` answers the same way for an unknown address, and `POST /api/users/reset-password` sets the password and revokes refresh tokens. Links use `APP_PUBLIC_URL`. Mail that is not configured returns 503. Registration still returns a session, plus `verificationEmailSent`.
+- `GET /api/subscriptions/requests` includes `place` for a pending request, numbered with the admin waiting line for that provider and country. `DELETE /api/subscriptions/requests/:requestId` cancels the caller's pending request.
+- `PUT /api/users/profile` stores phone, country, and optional timezone, age, where they heard about BuddyPass, and metadata. A seat request returns 403 `PROFILE_INCOMPLETE` until the name, phone, and country are set. Email is shown and not edited here. The admin user view includes the same fields.
+- `npm run mail:test -- you@example.com` sends one plain message through the configured SMTP relay and exits with an error if the relay rejects it. `env.example` documents Brevo's free relay (`smtp-relay.brevo.com`, port 587): the SMTP login, the SMTP key, and a verified sender as `SMTP_FROM`. Startup logs whether outbound mail is on, without the password.
+- Notices are pushed on socket.io at `/socket.io` as soon as they are stored, before email. The handshake takes the access token in `auth.token`. Payment and seat notices set `urgent` to true. Expiry warnings are pushed with `urgent` false. A connection drops when the access token expires. When `REDIS_URL` is set, socket events are shared across processes. A client reloads `GET /api/users/notifications` after reconnecting.
+- A login code for a paid seat is pushed on `login-code` to that customer. A code that matches no seat is pushed to connected admins.
+- The customer chooses manual verification or an online payment when starting a seat payment. A body that only sends `method` stays an online payment. Manual payments can record how the money was sent and a confirmation note. The first note emails admins again.
+- Admins are emailed, with the subject "Payment to verify", when a payment needs a person to confirm it: every manual payment, Lumicash, Bancobu eNoti, and an Ihella charge that was not created. The notice is stored first. Email is the sender. A later channel can deliver the same notice.
+- `GET /api/admin/payments` filters by `verification` and `status`. `GET /api/admin/payments/awaiting` lists payments waiting for an admin. The dashboard includes `paymentsToVerify`.
+- A held or blocked seat stays in place while a payment is waiting for an admin. Rejecting the payment tells the customer they can try again, and the normal hold or grace window applies on the next sweep.
+
+### Changed
+
+- The payment-confirmed notice is "Your payment is confirmed. Open BuddyPass to see your login."
+- `login-code` includes `source` (`INBOX` or `ADMIN`). A code that does not match the active claim goes to admins.
+- `ROADMAP.md` current state now matches the API: the founder-pool engine and the customer entrance are in place. A live run on a real streaming account is still ahead. Project rules live in `.cursor/rules/`. The README no longer says payments and outbound mail are outside this service.
+- `Payment.method` can be empty for a manual payment. Existing payments are backfilled as `ONLINE`.
+- Confirming a manual payment after the seat was released is rejected and the payment stays pending. A late online confirmation still records the payment without reopening the seat.
+
+## [3.0.0] - 2026-10-23
+
+Breaking release. A customer no longer receives streaming credentials the moment a seat is assigned, and a provider renewal no longer clears the people already seated.
+
+### Added
+
+- Admin dashboard inventory per service (total, taken, free), waiting count, and accounts whose provider date falls inside the next week.
+- `PUT /api/admin/users/:userId/verification` verifies a local account. The user profile includes that person's seats and pending requests.
+- Public `GET /api/offers` lists price, currency, and free seats. Streaming emails and wholesale cost stay off that response. Providers can store an icon. Shared accounts store `accountCost`.
+- `GET /api/admin/waiting-line` is a read-only line with place in queue. Assignment stays automatic.
+- Capacity alerts include free seats, who is waiting, pace, historical fill time, and ETA. `GET /api/admin/capacity-alerts` lists open alerts, and the dashboard includes the open count plus the newest ten. `POST /api/admin/capacity-alerts/:alertId/accounts` stocks the next login for that provider and country.
+- Product notes for the Burundi reseller: `ROADMAP.md`, `USER_JOURNEY.md`, and `ADMIN_INVENTORY.md`.
+- Credential reveals are stored and listed at `GET /api/admin/subscriptions/:id/reveals`.
+- Each seat has its own email alias. Login codes from the admin inbox are matched by alias and shown to the paid seat holder or an admin for 15 minutes. Unmatched codes are listed for the admin. IMAP polling runs only when the inbox is configured.
+- Seat holders can report a dead login. Admins can list and resolve those incidents.
+- Notices are stored for provider expiry (admins only), customer term expiry, seat changes, and payment confirmation. `GET /api/users/notifications` and `GET /api/admin/notifications` list them. Outbound mail sends only when SMTP is configured.
+- Seat payments for Ihella, Lumicash, and Bancobu eNoti. The amount comes from the account. Lumicash and eNoti wait for an admin to confirm. Ihella calls out only when its API is configured, and its webhook checks an HMAC of the raw body. A confirmed payment starts or extends the customer's month on the same seat.
+
+### Changed
+
+- A new seat waits 24 hours for its first payment (`SEAT_PAYMENT_HOLD_HOURS`), then returns to the line. After the paid month, the seat stays blocked for 3 days (`SEAT_BLOCK_GRACE_DAYS`) so the same person can renew it, then it is freed.
+- Renewing the provider date keeps current holders. An account past that date takes no new seats until it is renewed.
+- A person can hold a new seat on an account they have already left. One active seat per person per account is still enforced.
+- Existing active seats are backfilled as paid-through one month from the day they were assigned, so a deploy does not lock current holders out.
+
 ## [2.0.0] - 2026-10-21
 
 Breaking release. Response bodies, shared credentials, and subscription capacity all change.

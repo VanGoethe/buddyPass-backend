@@ -11,5 +11,6 @@ export * from "../models";
 // Export additional types
 export * from "./serviceProviders";
 export * from "./subscriptions";
+export * from "./capacity";
 export * from "./countries";
 export * from "./currencies";

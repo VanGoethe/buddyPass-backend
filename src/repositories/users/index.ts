@@ -9,19 +9,56 @@ import {
   CountOptions,
 } from "../../types/users";
 
+const userInclude = { country: true } as const;
+
+type UserRow = Prisma.UserGetPayload<{ include: typeof userInclude }>;
+
+function toUser(row: UserRow): User {
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    password: row.password,
+    avatar: row.avatar,
+    googleId: row.googleId,
+    provider: row.provider,
+    role: row.role,
+    isVerified: row.isVerified,
+    isActive: row.isActive,
+    phone: row.phone,
+    countryId: row.countryId,
+    timezone: row.timezone,
+    age: row.age,
+    heardAboutUs: row.heardAboutUs,
+    metadata: row.metadata,
+    country: row.country
+      ? { id: row.country.id, name: row.country.name, code: row.country.code }
+      : null,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    lastLoginAt: row.lastLoginAt,
+  };
+}
+
 export class PrismaUserRepository implements IUserRepository {
   constructor(private prisma: PrismaClient) {}
 
   async findById(id: string): Promise<User | null> {
-    return this.prisma.user.findUnique({ where: { id } });
+    const row = await this.prisma.user.findUnique({ where: { id }, include: userInclude });
+    return row ? toUser(row) : null;
   }
 
   async findByEmail(email: string): Promise<User | null> {
-    return this.prisma.user.findUnique({ where: { email } });
+    const row = await this.prisma.user.findUnique({ where: { email }, include: userInclude });
+    return row ? toUser(row) : null;
   }
 
   async findByGoogleId(googleId: string): Promise<User | null> {
-    return this.prisma.user.findUnique({ where: { googleId } });
+    const row = await this.prisma.user.findUnique({
+      where: { googleId },
+      include: userInclude,
+    });
+    return row ? toUser(row) : null;
   }
 
   async findMany(options?: FindManyOptions): Promise<User[]> {
@@ -41,12 +78,14 @@ export class PrismaUserRepository implements IUserRepository {
       where.isActive = isActive;
     }
 
-    return this.prisma.user.findMany({
+    const rows = await this.prisma.user.findMany({
       where,
       skip: (page - 1) * limit,
       take: limit,
       orderBy: { [orderBy.field]: orderBy.direction },
+      include: userInclude,
     });
+    return rows.map(toUser);
   }
 
   async count(options?: CountOptions): Promise<number> {
@@ -61,7 +100,7 @@ export class PrismaUserRepository implements IUserRepository {
   }
 
   async create(userData: CreateUserData): Promise<User> {
-    return this.prisma.user.create({
+    const row = await this.prisma.user.create({
       data: {
         email: userData.email,
         password: userData.password,
@@ -72,22 +111,39 @@ export class PrismaUserRepository implements IUserRepository {
         role: userData.role || UserRole.USER,
         isVerified: userData.isVerified ?? false,
       },
+      include: userInclude,
     });
+    return toUser(row);
   }
 
   async updateProfile(id: string, userData: UpdateProfileData): Promise<User> {
-    return this.prisma.user.update({
+    const data: Prisma.UserUpdateInput = {
+      name: userData.name,
+      avatar: userData.avatar,
+      password: userData.password,
+      googleId: userData.googleId,
+      provider: userData.provider,
+      isVerified: userData.isVerified,
+      lastLoginAt: userData.lastLoginAt,
+      phone: userData.phone,
+      timezone: userData.timezone,
+      age: userData.age,
+      heardAboutUs: userData.heardAboutUs,
+    };
+    if (userData.metadata !== undefined) {
+      data.metadata = userData.metadata === null ? Prisma.JsonNull : userData.metadata;
+    }
+    if (userData.countryId !== undefined) {
+      data.country = userData.countryId
+        ? { connect: { id: userData.countryId } }
+        : { disconnect: true };
+    }
+    const row = await this.prisma.user.update({
       where: { id },
-      data: {
-        name: userData.name,
-        avatar: userData.avatar,
-        password: userData.password,
-        googleId: userData.googleId,
-        provider: userData.provider,
-        isVerified: userData.isVerified,
-        lastLoginAt: userData.lastLoginAt,
-      },
+      data,
+      include: userInclude,
     });
+    return toUser(row);
   }
 
   async updateRole(id: string, role: UserRole): Promise<User> {

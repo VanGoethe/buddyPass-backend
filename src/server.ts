@@ -1,4 +1,5 @@
 import App from "./app";
+import { container } from "./container";
 import { env } from "./config/env";
 import { connectDatabase, disconnectDatabase } from "./config/database";
 import { logger } from "./utils/logger";
@@ -10,6 +11,14 @@ async function start(): Promise<void> {
     startSlotMaintenance();
   }
 
+  if (env.SMTP_HOST && env.SMTP_FROM) {
+    logger.info({ host: env.SMTP_HOST }, "Outbound mail enabled");
+  } else {
+    logger.warn(
+      "Outbound mail is off. Notices stay in the app until SMTP_HOST and SMTP_FROM are set."
+    );
+  }
+
   const app = new App();
   const server = app.app.listen(env.PORT, () => {
     logger.info(
@@ -17,9 +26,11 @@ async function start(): Promise<void> {
       "Server started"
     );
   });
+  container.getNotificationPublisher().attach(server);
 
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ signal }, "Server shutting down");
+    await container.getNotificationPublisher().close();
     server.close(async () => {
       await disconnectDatabase();
       process.exit(0);

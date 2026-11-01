@@ -59,6 +59,9 @@ describe("SubscriptionService", () => {
     findByServiceProviderId: jest.fn(),
     count: jest.fn(),
     countByServiceProviderId: jest.fn(),
+    inventoryByService: jest.fn(),
+    listExpiringAccounts: jest.fn(),
+    listOfferAccounts: jest.fn(),
   };
   const slotRepository: jest.Mocked<ISubscriptionSlotRepository> = {
     create: jest.fn(),
@@ -76,6 +79,10 @@ describe("SubscriptionService", () => {
     findByUserId: jest.fn(),
     findPendingByProviderAndCountry: jest.fn(),
     update: jest.fn(),
+    countPending: jest.fn(),
+    listPendingDetailed: jest.fn(),
+    listPendingOrder: jest.fn(),
+    cancelIfPending: jest.fn(),
   };
   const serviceProviderRepository: jest.Mocked<IServiceProviderRepository> = {
     create: jest.fn(),
@@ -105,7 +112,7 @@ describe("SubscriptionService", () => {
   const slotAssignmentService: jest.Mocked<ISlotAssignmentService> = {
     assignSlotToUser: jest.fn(),
     processPending: jest.fn(),
-    releaseExpiredSlots: jest.fn(),
+    sweepSeatTerms: jest.fn(),
   };
 
   let service: SubscriptionService;

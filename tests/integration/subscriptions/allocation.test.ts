@@ -2,6 +2,7 @@ import { getPrismaClient } from "../../../src/config/database";
 import { SlotAssignmentService } from "../../../src/services/subscriptions/slotAssignmentService";
 import { credentialCipher } from "../../../src/utils/credentialCipher";
 import { withTestCleanup } from "../../utils/testCleanup";
+import { occupiedSlotData } from "../../utils/subscriptionFixture";
 
 const prisma = getPrismaClient();
 
@@ -87,7 +88,7 @@ describe("slot allocation", () => {
       cleanup.trackSubscription(subscription.id);
 
       const slot = await prisma.subscriptionSlot.create({
-        data: { userId: holder.id, subscriptionId: subscription.id },
+        data: occupiedSlotData(holder.id, subscription.id),
       });
       cleanup.trackSubscriptionSlot(slot.id);
 

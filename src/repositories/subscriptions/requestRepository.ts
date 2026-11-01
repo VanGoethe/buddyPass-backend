@@ -93,4 +93,53 @@ export class PrismaSubscriptionRequestRepository
     });
     return SubscriptionRequest.fromPrisma(request);
   }
+
+  async countPending(): Promise<number> {
+    return this.prisma.subscriptionRequest.count({ where: { status: "PENDING" } });
+  }
+
+  async listPendingDetailed() {
+    const rows = await this.prisma.subscriptionRequest.findMany({
+      where: { status: "PENDING" },
+      orderBy: [{ requestedAt: "asc" }, { id: "asc" }],
+      include: {
+        user: { select: { name: true } },
+        serviceProvider: { select: { name: true } },
+        country: { select: { name: true } },
+      },
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      userId: row.userId,
+      userName: row.user.name,
+      serviceProviderId: row.serviceProviderId,
+      serviceProviderName: row.serviceProvider.name,
+      countryId: row.countryId,
+      countryName: row.country?.name ?? null,
+      requestedAt: row.requestedAt,
+    }));
+  }
+
+  async listPendingOrder(serviceProviderId: string, countryId?: string | null) {
+    return this.prisma.subscriptionRequest.findMany({
+      where: {
+        status: "PENDING",
+        serviceProviderId,
+        countryId: countryId ?? null,
+      },
+      orderBy: [{ requestedAt: "asc" }, { id: "asc" }],
+      select: { id: true, userId: true },
+    });
+  }
+
+  async cancelIfPending(id: string): Promise<ISubscriptionRequest | null> {
+    const updated = await this.prisma.subscriptionRequest.updateMany({
+      where: { id, status: "PENDING" },
+      data: { status: "CANCELLED", processedAt: new Date() },
+    });
+    if (updated.count !== 1) {
+      return null;
+    }
+    return this.findById(id);
+  }
 }

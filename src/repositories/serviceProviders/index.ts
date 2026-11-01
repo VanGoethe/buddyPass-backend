@@ -42,7 +42,12 @@ export class PrismaServiceProviderRepository implements IServiceProviderReposito
         data: {
           name: data.name.trim(),
           description: data.description?.trim() || null,
+          iconUrl: data.iconUrl?.trim() || null,
           metadata: toJsonInput(data.metadata) ?? Prisma.DbNull,
+          codeSenderDomains: (data.codeSenderDomains ?? []).map((domain) =>
+            domain.trim().toLowerCase()
+          ),
+          codePattern: data.codePattern?.trim() || null,
         },
       });
 
@@ -163,8 +168,22 @@ export class PrismaServiceProviderRepository implements IServiceProviderReposito
         updateData.description = data.description?.trim() || null;
       }
 
+      if (data.iconUrl !== undefined) {
+        updateData.iconUrl = data.iconUrl?.trim() || null;
+      }
+
       if (data.metadata !== undefined) {
         updateData.metadata = toJsonInput(data.metadata);
+      }
+
+      if (data.codeSenderDomains !== undefined) {
+        updateData.codeSenderDomains = data.codeSenderDomains.map((domain) =>
+          domain.trim().toLowerCase()
+        );
+      }
+
+      if (data.codePattern !== undefined) {
+        updateData.codePattern = data.codePattern?.trim() || null;
       }
 
       const serviceProvider = await tx.serviceProvider.update({

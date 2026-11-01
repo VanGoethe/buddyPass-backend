@@ -4,17 +4,18 @@ Node.js API for sharing streaming-service accounts. Users request a slot on a se
 
 ## Stack
 
-Express 4, TypeScript, Prisma, PostgreSQL. Optional Redis for shared rate limits. JWT access tokens last 15 minutes. Refresh tokens rotate and are stored as SHA-256 hashes. Google sign-in is optional.
+Express 4, TypeScript, Prisma, PostgreSQL, and socket.io. Optional Redis for shared rate limits and for sharing socket events across processes. JWT access tokens last 15 minutes. Refresh tokens rotate and are stored as SHA-256 hashes. Google sign-in is optional.
 
 ## What the API does
 
 - Register, log in, refresh, and log out. Google OAuth links an existing account only when that account is already verified.
 - Admins create shared subscriptions. The streaming password is encrypted with AES-256-GCM, not hashed.
 - Slot assignment runs in a serializable transaction and will not overbook `maxSlots`. Pending requests are filled first-in, first-out when capacity appears. Expired subscriptions release their slots on an hourly sweep.
-- `GET /subscriptions/slots/:slotId/credentials` returns the email and password to the active slot owner or an admin. Responses are not cached.
+- `GET /subscriptions/slots/:slotId/credentials` returns the email and password to the paid slot owner or an admin. Responses are not cached. Credentials stay hidden until payment is confirmed.
+- The customer pays by manual verification or an online method (Ihella, Lumicash, Bancobu eNoti). Notices are stored and pushed on `/socket.io`. Email sends when SMTP is configured.
 - `GET /health` checks the database. Interactive docs are at `/api-docs`.
 
-Payments, outbound email, and an admin UI are not part of this service.
+There is no admin website. Operate the admin API from `/api-docs`.
 
 ## Setup
 
@@ -26,6 +27,15 @@ npm run dev
 ```
 
 Required environment variables: `DATABASE_URL`, `JWT_SECRET` (at least 32 characters), `JWT_REFRESH_SECRET` (at least 32 characters), and `CREDENTIALS_ENCRYPTION_KEY` (base64-encoded 32 bytes). The process exits if any of those are missing or invalid. See `env.example` for the rest, including optional `REDIS_URL` and `TRUST_PROXY`.
+
+Notices are pushed on the socket at `/socket.io` as soon as they are stored. Connect with the access token in the handshake field `auth.token`. The connection is dropped when that token expires. Payment and seat events set `urgent` to true. Expiry warnings set it to false. After connecting or reconnecting, reload `GET /api/users/notifications` and `GET /api/subscriptions/slots/:slotId/login-code`. Socket events are not replayed. When `REDIS_URL` is set, socket events are shared across API processes on that Redis.
+
+Seat events on that socket:
+
+- `seat-ready` after a payment is confirmed. It names the seat and the service. It does not include the email or the password. The app fetches those.
+- `login-code` with `source` `INBOX` or `ADMIN`.
+- `login-code-status` while a verification request is queued or becomes active. It carries `phase`, `position`, `estimatedStartAt`, and `watchingUntil`.
+- `login-code-missed` when the active turn ends with no code.
 
 Create an admin (both variables are required; the script does not print the password):
 

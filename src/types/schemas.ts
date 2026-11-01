@@ -31,8 +31,33 @@ export const refreshSchema = z.object({
 
 export const updateProfileSchema = z.object({
   body: z.object({
-    name: z.string().trim().min(1).max(50).optional(),
+    name: z.string().trim().min(2).max(100).optional(),
     avatar: z.string().url().optional(),
+    phone: z.string().trim().min(1).max(32).optional(),
+    countryId: z.string().min(1).nullable().optional(),
+    timezone: z.string().trim().min(1).max(64).nullable().optional(),
+    age: z.number().int().min(13).max(120).nullable().optional(),
+    heardAboutUs: z.string().trim().max(200).nullable().optional(),
+    metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+  }),
+});
+
+export const verifyEmailSchema = z.object({
+  body: z.object({
+    token: z.string().min(1),
+  }),
+});
+
+export const forgotPasswordSchema = z.object({
+  body: z.object({
+    email: z.string().email(),
+  }),
+});
+
+export const resetPasswordSchema = z.object({
+  body: z.object({
+    token: z.string().min(1),
+    password: passwordSchema,
   }),
 });
 
@@ -93,6 +118,7 @@ export const createSubscriptionSchema = z.object({
     maxSlots: z.coerce.number().int().min(1).max(100),
     expiresAt: z.string().datetime().optional(),
     userPrice: z.coerce.number().nonnegative().optional(),
+    accountCost: z.coerce.number().nonnegative().optional(),
     currencyId: z.string().min(1).optional(),
     currency: z.string().min(1).optional(),
     isActive: z.boolean().optional(),
@@ -111,6 +137,7 @@ export const updateSubscriptionSchema = z.object({
     countryId: z.string().min(1).optional(),
     expiresAt: z.string().datetime().optional(),
     userPrice: z.coerce.number().nonnegative().optional(),
+    accountCost: z.coerce.number().nonnegative().optional(),
     currencyId: z.string().min(1).optional(),
     isActive: z.boolean().optional(),
     metadata: z.record(z.string(), z.unknown()).optional(),
@@ -131,6 +158,99 @@ export const slotRequestSchema = z.object({
 
 export const slotIdSchema = z.object({
   params: z.object({ slotId: z.string().min(1) }),
+});
+
+export const requestIdSchema = z.object({
+  params: z.object({ requestId: z.string().min(1) }),
+});
+
+export const verifyUserSchema = userIdSchema.extend({
+  body: z.object({ isVerified: z.boolean() }),
+});
+
+export const alertAccountSchema = z.object({
+  params: z.object({ alertId: z.string().min(1) }),
+  body: z.object({
+    name: z.string().trim().min(1).max(100),
+    email: z.string().email(),
+    password: z.string().min(6),
+    maxSlots: z.coerce.number().int().min(1).max(100),
+    expiresAt: z.string().datetime().optional(),
+    userPrice: z.coerce.number().nonnegative().optional(),
+    accountCost: z.coerce.number().nonnegative().optional(),
+    currencyId: z.string().min(1).optional(),
+    isActive: z.boolean().optional(),
+  }),
+});
+
+const gatewayMethodSchema = z.enum(["IHELLA", "LUMICASH", "ENOTI"]);
+const confirmationNoteSchema = z.string().trim().min(1).max(500);
+
+export const paymentMethodSchema = slotIdSchema.extend({
+  body: z.union([
+    z.object({
+      verification: z.literal("MANUAL"),
+      method: gatewayMethodSchema.optional(),
+      confirmationNote: confirmationNoteSchema.optional(),
+    }),
+    z.object({
+      verification: z.literal("ONLINE"),
+      method: gatewayMethodSchema,
+      confirmationNote: confirmationNoteSchema.optional(),
+    }),
+    z.object({
+      method: gatewayMethodSchema,
+    }),
+  ]),
+});
+
+export const paymentIdSchema = z.object({
+  params: z.object({ paymentId: z.string().min(1) }),
+});
+
+export const paymentConfirmationSchema = paymentIdSchema.extend({
+  body: z.object({ confirmationNote: confirmationNoteSchema }),
+});
+
+export const paymentListSchema = z.object({
+  query: z.object({
+    verification: z.enum(["MANUAL", "ONLINE"]).optional(),
+    status: z.enum(["PENDING", "PAID", "FAILED"]).optional(),
+  }),
+});
+
+export const incidentNoteSchema = slotIdSchema.extend({
+  body: z.object({ note: z.string().trim().min(1).max(500) }),
+});
+
+export const loginCodeHelpListSchema = z.object({
+  query: z.object({
+    status: z.enum(["OPEN", "RESOLVED"]).optional(),
+  }),
+});
+
+export const adminLoginCodeSchema = slotIdSchema.extend({
+  body: z.object({
+    code: z.string().trim().regex(/^[A-Za-z0-9]{4,12}$/),
+  }),
+});
+
+export const incidentIdSchema = z.object({
+  params: z.object({ incidentId: z.string().min(1) }),
+});
+
+export const incidentListSchema = z.object({
+  query: z.object({ subscriptionId: z.string().min(1).optional() }),
+});
+
+export const notificationIdSchema = z.object({
+  params: z.object({ notificationId: z.string().min(1) }),
+});
+
+export const loginCodeListSchema = z.object({
+  query: z.object({
+    unmatched: z.enum(["true", "false"]).optional(),
+  }),
 });
 
 export const listSubscriptionsSchema = z.object({

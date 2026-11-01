@@ -76,6 +76,66 @@ function reject(next: NextFunction, details: string[], message: string): void {
   next(new ValidationError(message, details));
 }
 
+function iconIssue(value: unknown): string | null {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  if (typeof value !== "string" || !/^https?:\/\//.test(value)) {
+    return "Icon URL must be an http(s) URL";
+  }
+  return null;
+}
+
+function domainIssue(value: unknown): string | null {
+  if (value === undefined) {
+    return null;
+  }
+  if (!Array.isArray(value) || value.length > 20) {
+    return "codeSenderDomains must be a list of up to 20 domains";
+  }
+  for (const item of value) {
+    if (typeof item !== "string" || !/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(item.trim())) {
+      return "codeSenderDomains must be domain names";
+    }
+  }
+  return null;
+}
+
+function patternIssue(value: unknown): string | null {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  if (typeof value !== "string" || value.length > 200) {
+    return "codePattern must be a regular expression";
+  }
+  try {
+    new RegExp(value);
+  } catch {
+    return "codePattern must be a regular expression";
+  }
+  return null;
+}
+
+function readDomains(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim().toLowerCase())
+    .filter((item) => item.length > 0);
+}
+
+function readPattern(value: unknown): string | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null || value === "") {
+    return null;
+  }
+  return typeof value === "string" ? value.trim() : undefined;
+}
+
 const createServiceProviderValidation: RequestHandler = (req, _res, next) => {
   if (!isRecord(req.body)) {
     reject(next, ["Request body must be an object"], "Invalid input data");
@@ -100,6 +160,18 @@ const createServiceProviderValidation: RequestHandler = (req, _res, next) => {
   const metadataIssue = metadataError(req.body.metadata);
   if (metadataIssue) {
     details.push(metadataIssue);
+  }
+  const icon = iconIssue(req.body.iconUrl);
+  if (icon) {
+    details.push(icon);
+  }
+  const domains = domainIssue(req.body.codeSenderDomains);
+  if (domains) {
+    details.push(domains);
+  }
+  const pattern = patternIssue(req.body.codePattern);
+  if (pattern) {
+    details.push(pattern);
   }
 
   if (details.length > 0) {
@@ -147,6 +219,18 @@ const updateServiceProviderValidation: RequestHandler = (req, _res, next) => {
   const metadataIssue = metadataError(req.body.metadata);
   if (metadataIssue) {
     details.push(metadataIssue);
+  }
+  const icon = iconIssue(req.body.iconUrl);
+  if (icon) {
+    details.push(icon);
+  }
+  const domains = domainIssue(req.body.codeSenderDomains);
+  if (domains) {
+    details.push(domains);
+  }
+  const pattern = patternIssue(req.body.codePattern);
+  if (pattern) {
+    details.push(pattern);
   }
 
   if (details.length > 0) {
@@ -238,13 +322,36 @@ export class ServiceProviderController {
   ): Promise<void> {
     try {
       const body = isRecord(req.body) ? req.body : {};
+      const created: {
+        name: string;
+        description?: string;
+        iconUrl?: string;
+        metadata?: ReturnType<typeof readMetadata>;
+        codeSenderDomains?: string[];
+        codePattern?: string | null;
+        supportedCountryIds?: string[];
+      } = {
+        name: typeof body.name === "string" ? body.name : "",
+        description:
+          typeof body.description === "string" ? body.description : undefined,
+        iconUrl: typeof body.iconUrl === "string" ? body.iconUrl : undefined,
+        metadata: readMetadata(body.metadata),
+      };
+      const domains = readDomains(body.codeSenderDomains);
+      if (domains) {
+        created.codeSenderDomains = domains;
+      }
+      const pattern = readPattern(body.codePattern);
+      if (pattern !== undefined) {
+        created.codePattern = pattern;
+      }
+      if (Array.isArray(body.supportedCountryIds)) {
+        created.supportedCountryIds = body.supportedCountryIds.filter(
+          (id): id is string => typeof id === "string"
+        );
+      }
       const serviceProvider =
-        await this.serviceProviderService.createServiceProvider({
-          name: typeof body.name === "string" ? body.name : "",
-          description:
-            typeof body.description === "string" ? body.description : undefined,
-          metadata: readMetadata(body.metadata),
-        });
+        await this.serviceProviderService.createServiceProvider(created);
 
       sendSuccess(
         res,
@@ -310,13 +417,41 @@ export class ServiceProviderController {
   ): Promise<void> {
     try {
       const body = isRecord(req.body) ? req.body : {};
+      const updated: {
+        name?: string;
+        description?: string;
+        iconUrl?: string | null;
+        metadata?: ReturnType<typeof readMetadata>;
+        codeSenderDomains?: string[];
+        codePattern?: string | null;
+        supportedCountryIds?: string[];
+      } = {
+        name: typeof body.name === "string" ? body.name : undefined,
+        description:
+          typeof body.description === "string" ? body.description : undefined,
+        iconUrl:
+          body.iconUrl === null
+            ? null
+            : typeof body.iconUrl === "string"
+              ? body.iconUrl
+              : undefined,
+        metadata: readMetadata(body.metadata),
+      };
+      const domains = readDomains(body.codeSenderDomains);
+      if (domains) {
+        updated.codeSenderDomains = domains;
+      }
+      const pattern = readPattern(body.codePattern);
+      if (pattern !== undefined) {
+        updated.codePattern = pattern;
+      }
+      if (Array.isArray(body.supportedCountryIds)) {
+        updated.supportedCountryIds = body.supportedCountryIds.filter(
+          (id): id is string => typeof id === "string"
+        );
+      }
       const serviceProvider =
-        await this.serviceProviderService.updateServiceProvider(req.params.id, {
-          name: typeof body.name === "string" ? body.name : undefined,
-          description:
-            typeof body.description === "string" ? body.description : undefined,
-          metadata: readMetadata(body.metadata),
-        });
+        await this.serviceProviderService.updateServiceProvider(req.params.id, updated);
 
       sendSuccess(
         res,
