@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `npm test` with no `DATABASE_URL` uses the local Postgres socket when one is present, instead of a TCP password login. The test-database guard reads the database name from that URL, including a `host` query that contains a slash.
 - Inbox polling now searches, fetches, and marks messages by IMAP UID, so a code email is not read again on the next poll.
 
 ### Added
